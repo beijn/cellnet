@@ -12,7 +12,7 @@ $conda activate cellnet_release
 pip uninstall -y cellnet
 rm -rf ~/.cache/cellnet/model-*.zip
 rm -rf ~/.cache/cellnet/model_export
-cd ~/cellnet
+#cd ~/cellnet
 #git switch main
 #git pull
 bin/install

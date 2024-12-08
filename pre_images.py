@@ -33,7 +33,7 @@ def cache_fg_masks_using_stens_model(image_paths=image_paths, thresh=0.01):
     return (pred > thresh).reshape(len(X), *X.shape[2:]).astype(np.uint8)
   
   # if data/cache/fgmasks/{i}.npy exists, load it, otherwise create it
-  X = load_images(image_paths)
+  X = {i:load_image(i) for i in image_paths}
   dir = os.path.expanduser('data/cache/fgmasks')
   os.makedirs(dir, exist_ok=True)
   M = {}
@@ -42,6 +42,7 @@ def cache_fg_masks_using_stens_model(image_paths=image_paths, thresh=0.01):
       M[i] = np.load(f'{dir}/{imgid(i)}.npy')
       print(f"Loaded fgmask for {(i)}")
     else:
+      print(f"Creating fgmask for {(i)}")
       M[i] = create_masks(X[i][None])[0]
       np.save(f'{dir}/{imgid(i)}.npy', M[i])
       print(f"Saved fgmask for {(i)}")
@@ -51,12 +52,12 @@ if __name__=='__main__':
   M = cache_fg_masks_using_stens_model()
 
   from cellnet import plot 
-  from cellnet.data import load_images, load_points
+  from cellnet.data import load_image, load_points
   import matplotlib.pyplot as plt
 
   for i in image_paths:
-    x = load_images([i])[i]
-    try: p = load_points([i])[i]
+    x = load_image(i)
+    try: p = load_points(i)
     except: p = np.zeros((0,3))
     m = M[i]
 

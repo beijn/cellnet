@@ -16,7 +16,6 @@ experiments = dict(
   encoder_adaptedbestsmall =     ('model_encoder', ['resnet152', 'resnet34', 'timm-efficientnet-b5', 'timm-mobilenetv3_large_100', 'timm-resnest50d', 'xception', 'vgg19_bn']),
   encoder_big = ('model_encoder', ['resnet152', 'timm-efficientnet-l2', 'timm-efficientnet-b8', 'timm-mobilenetv3_large_100', 'timm-resnest200e', 'timm-resnest269e', 'inceptionresnetv2', 'inceptionv4', 'xception', 'vgg19_bn']),
   xnorm_per_channel = ('xnorm_type', 'image_per_channel'),
-##  rmbad =       ('rmbad', 0.1), ## DECRAP?
   loss =        ('lossf', ['MSE','BCE', 'MSE+BCE']), # 'KLD', 'MSE+BCE+KLD', 'Focal', 'MCC', 'Dice' Focal and MCC are erroneous (maybe logits vs probs). Dice is bad.  TODO Be inspired by arxiv:1907.02336
   # TODO: if linearcomb is better, then grid search weight
   sigma =       ('sigma', [3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0]),
@@ -24,7 +23,6 @@ experiments = dict(
   sparsity =    ('sparsity', [0.1, 0.25, 0.5, 0.75, 0.875, 1.0]),
 )
 
-from json import decoder
 from cellnet import data
 import pandas as pd
 
@@ -49,7 +47,12 @@ if MODE not in modes: MODE = 'crossval'
 # MODE undefined => interactive execution with draft; uknown custom tag defaults to crossval
 
 
-if   MODE=='draft': data_splits = [(['data/images/1.jpg'], ['data/images/4.jpg'])]
+MODE = 'demo'
+
+if MODE=='demo': 
+  image_paths = ['data/images/1.jpg']
+  data_splits = [(['data/images/1.jpg'], [])]
+elif MODE=='draft': data_splits = [(['data/images/1.jpg'], ['data/images/4.jpg'])]
 elif MODE=='release': data_splits = [(image_paths, [])]
 else: #MODE=='crossval': 
   crossval_vals = [s.split(' ') for s in crossval_vals.split(' | ')]
@@ -75,7 +78,6 @@ CFG = obj(**(dict(
   model_architecture='smp.UnetPlusPlus:attention',
   model_encoder='timm-mobilenetv3_large_100',
   param=P,
-  rmbad=0,
   sigma=5.0,  # NOTE: do grid search again later when better convergence 
   sparsity=1,
   xnorm_params={},
@@ -114,7 +116,6 @@ def mkAugs(mode):
   T = lambda ts:  A.Compose(transforms=[
     A.PadIfNeeded(C,C, border_mode=0, value=0),
     *ts,
-    XNorm(), 
     A.PadIfNeeded(C,C, border_mode=0, value=0),
     ToTensorV2(transpose_mask=True, always_apply=True)], 
     keypoint_params=A.KeypointParams(format='xy', label_fields=['class_labels'], remove_invisible=True) 
@@ -124,9 +125,10 @@ def mkAugs(mode):
           ]
 
   return dict(
-    test  = T([]),
+    demo  = T([]),
+    test  = T([XNorm()]),
     val   = T([A.RandomCrop(C,C, p=1),
-               *vals]),
+               *vals, XNorm()]),
     train = T([A.RandomCrop(C,C, p=1),
                A.RandomBrightnessContrast(p=1, brightness_limit=0.25, contrast_limit=0.25),
                #A.RandomSizedCrop(p=1, min_max_height=(CROPSIZE//2, CROPSIZE*2), height=CROPSIZE, width=CROPSIZE),  # NOTE: issue with resize is that the keypoint sizes will not be updated
@@ -135,12 +137,16 @@ def mkAugs(mode):
                #A.Equalize(),
                #A.ColorJitter(), 
                #A.GaussNoise(),
-               *vals])
+               *vals, XNorm()])
   )[mode]
 
 
 # %% # Plot data 
-if MODE=='draft' and not CUDA: 
+if (MODE == 'draft' and not CUDA) or 'demo': 
+  def norm01(x):
+    x = x.transpose(1,2,0)
+    x = x/(x.max((0,1))-x.min((0,1)))
+    return (x-x.min((0,1))).transpose(2,0,1)
   kp2hm, yunnorm, _ = mk_kp2mh_yunnorm(CFG)
 
   from math import prod
@@ -149,14 +155,24 @@ if MODE=='draft' and not CUDA:
     B = next(iter(loader))
     B = batch2cpu(B, z=kp2hm(B))
     for b,ax in zip(B, plot.grid(grid, ([CFG.cropsize]*2))[1]):
-      plot.overlay(b.x, b.z, b.m, b.k, b.l, CFG.sigma, ax=ax)
+      plot.overlay(b.x, b.z, b.m, None, None, CFG.sigma, ax=ax)
+
+  for B in mk_loader(CFG.image_paths, cfg=CFG, bs=1, transforms=mkAugs('demo' if MODE=='demo' else 'test'), shuffle=False):
+    b = batch2cpu(B, z=kp2hm(B))[0]
+    if MODE=='demo': 
+      #ax = plot.overlay(b.x); b.x = norm01(b.x)
+      b.fg = load_fgmask(i:=CFG.image_paths[0])
+      ax = plot.overlay(b.x)
+      ax = plot.overlay(b.x, None, None, b.k, b.l, args_points=dict(marker='.', radius=7, colormap={1: 'red', 2: '#7700ff'}, alpha=1))
+      ax = plot.overlay(b.x, b.z, None)
+      ax = plot.overlay(b.x, b.z, b.fg)
+      ax = plot.overlay(b.x, b.z, b.m)
+
+    else: 
+      ax = plot.overlay(b.x, b.z, b.m, b.k, b.l, CFG.sigma)
 
   plot_grid((3,3), transforms=mkAugs('val'))
   plot_grid((3,3), transforms=mkAugs('train'))
-
-  for B in mk_loader(CFG.image_paths, cfg=CFG, bs=1, transforms=mkAugs('test'), shuffle=False):
-    b = batch2cpu(B, z=kp2hm(B))[0]
-    ax = plot.overlay(b.x, b.z, b.m, b.k, b.l, CFG.sigma)
  
 # %% # Create model 
 plt.close('all')
@@ -268,21 +284,6 @@ def training_run(cfg, traindl, valdl, kp2hm, model):
   if MODE != 'draft': evaluate_performance()
 
   results = pd.DataFrame([row]) if results.empty else pd.concat([results, pd.DataFrame([row])], ignore_index=True)
-
-  # DECRAP rmbad?
-  @debug.timeit
-  def loss_per_point_per_image():
-    i2p2L = {}
-    for i in vi: # only save the point losses for the validation image 
-      B = next(iter(mk_loader([i], bs=1, transforms=mkAugs('test'), shuffle=False, cfg=cfg)))
-      model.eval()
-      with torch.no_grad(): y = cpu(model(B['image'].to(device)))
-      B = batch2cpu(B, z=kp2hm(B), y=y)[0]
-      i2p2L[i] = data.loss_per_point(B, lossf, kernel=15, exclude=[2])
-      #np.save(f'p2L-{imgid(i)}.npy', p2L)  # DEBUG dump p2L to disk for later analysis
-      #print(f'DEBUG: saved point losses for val image {i} (should happen only once per cfg and image)')
-    return i2p2L
-  i2p2L = loss_per_point_per_image() if 'rmbad' in cfg.__dict__ and cfg.rmbad != 0 else {}
   
   # NOTE DUPLICATE COMPUTATIOM partial overlap with evaluate_performance
   @debug.timeit
@@ -298,24 +299,10 @@ def training_run(cfg, traindl, valdl, kp2hm, model):
         ax1 = plot.overlay(B.x, B.y, B.m, B.k, B.l, cfg.sigma) 
         ax2 = plot.diff   (B.y, B.z, B.m, B.k, B.l, cfg.sigma)
         ax3 = None
-
-        # DECRAP
-        if cfg.rmbad != 0: 
-          rm = np.argsort(-i2p2L[i])[:int(len(B.l)*cfg.rmbad)]  # type: ignore
-          ax3 = plot.image(B.x); plot.points(ax3, B.k, B.l)
-          for a in (ax1, ax2, ax3):
-            plot.points(a, B.k[rm], B.l[rm], colormap='#00ff00', lw=3)
-            
-        if  MODE!='draft': 
-          id = f"{P}={p}-{imgid(i)}" if type(ps) is list else imgid(i)
-          #np.save(f'preds/{id}.npy', y)
-          plot.save(ax1, f'plots/{id}.pred.png')
-          plot.save(ax2, f'plots/{id}.diff.png')
-          if ax3 is not None: plot.save(ax3, f'plots/{id}.points.png')  # DECRAP rmbad?
-          plt.close('all') # save but don't show
+    
   plot_preds()
 
-  return log, i2p2L
+  return log
 
 # mode == 2 => aka test augs => no cropping
 def get_loader(cfg, ti, vi):
@@ -329,7 +316,6 @@ for p in [_ps[-1]] if MODE=='draft' else _ps:
   cfg = obj(**(CFG.__dict__ | {P: p}))
   if P in ['sigma']: kp2hm, yunnorm, _ymax = mk_kp2mh_yunnorm(cfg)
 
-  i2p2L = {}  # DECRAP rmbad?
   for ti, vi in data_splits:
     cfg = obj(**(cfg.__dict__ | dict(ti=ti, vi=vi)))
 
@@ -350,42 +336,11 @@ for p in [_ps[-1]] if MODE=='draft' else _ps:
 
     model = mk_model(cfg)(cfg)
     try:
-      log, _i2p2L = training_run(cfg, traindl, valdl, kp2hm, model)
+      log = training_run(cfg, traindl, valdl, kp2hm, model)
     except Exception as e: 
       print(f"ERROR: Exception {e.__class__.__name__} in model training (train.training_run). CFG:\n", json.dumps(cfg.__dict__, indent=2))
       raise e
-    i2p2L |= _i2p2L  # DECRAP rmbad # NOTE: overrides if image in multiple val sets  
     if MODE!='release': del model
-
-  # DECRAP
-  if 'rmbad' in cfg.__dict__ and cfg.rmbad != 0:  # remove the bad points and retrain
-    keep = {i: np.argsort(-p2L)[int(len(p2L)*cfg.rmbad):] for i,p2L in i2p2L.items()} 
-    
-    for _i, k in keep.items(): print(f"DEBUG: keeping {len(k)} of {len(i2p2L[_i])} points for {_i}")
-
-    for ti, vi in data_splits:
-      cfg = obj(**(cfg.__dict__ | dict(ti=ti, vi=vi, epochs=cfg.epochs//2+1, rmbad=0.1)))
-
-      traindl, valdl = get_loader(cfg, ti, vi)
-
-      def regen_masks(dl):
-        ds: CellnetDataset = dl.dataset # type: ignore
-        ds.P = {i: ds.P[i][keep[i]] for i in ds.P}
-        ds._generate_masks(fraction=1, sparsity=1)
-        # regenerate masks, but don't throw away more data (f,s=1)
-        # NOTE: because we do it for each split repeatedly its a waste of compute. More efficient: to do it once but would need a bigish refactor
-
-        for i in ds.P:
-          ax = plot.overlay(ds.X[i], None, ds.M[i], ds.P[i][:,[0,1]], ds.P[i][:,2], cfg.sigma)
-          if not MODE=='draft': 
-            plot.save(ax, f'plots/regen_masks-{i}.png')
-            plt.close(ax.get_figure())
-      
-      regen_masks(traindl)
-      if valdl: regen_masks(valdl)
-
-      model = mk_model(cfg)(cfg)   # inefficient to recreate the model but makes code a little simpler and more space safe
-      log, _i2p2L = training_run(cfg, traindl, valdl, kp2hm, model)
   
 # %%
 # TODO maybe modularize model saving so it can be used to cache models from different experiments from P:ps

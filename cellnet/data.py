@@ -4,15 +4,11 @@ import pathlib
 import numpy as np, cv2, pandas as pd
 from scipy.ndimage import gaussian_filter, distance_transform_edt
 
-from sympy import Q
 import torch, torch.utils.data
 
-import json, os
+import os
 import albumentations as A
 from types import SimpleNamespace as obj
-
-
-import cellnet.debug as debug
 
 
 key2text = {'tl': 'Training Loss',     'vl': 'Validation Loss', 
@@ -20,7 +16,7 @@ key2text = {'tl': 'Training Loss',     'vl': 'Validation Loss',
             'ti': 'Training Image',    'vi': 'Validation Image',
             'bs': 'Batch Size',        'b' : 'Minibatches',       
             'e' : 'Epoch',             'lr': 'Learning Rate',
-            'lossf': 'Loss Function',  'rmbad': 'Prop. of Difficult Labels Removed',
+            'lossf': 'Loss Function',  'rmbad': 'Proportion of Difficult Labels Removed',
             'fraction': 'Fraction of Data',  'sparsity': 'Artificial Sparsity',  
             'sigma': 'Gaussian Sigma',        'maxdist': 'Max Distance',
             }
@@ -62,26 +58,16 @@ def ls(dir, ext='', stem=False):
   return sorted([((lambda f: pathlib.Path(f).stem) if stem else (lambda x:x))(
     os.path.normpath(os.path.join(dir, f))) for f in os.listdir(dir) if f.endswith(ext)])
 
-def load_images(image_paths):  
-  out = {}
-  for p in image_paths:
-    try: out[p] = cv2.cvtColor(cv2.imread(p), cv2.COLOR_BGR2RGB)  # TODO scrap cv dependency and use PIL
-    except Exception as e: raise Exception(f"Could not load image {p}.") from e
-  return out
+def _try_load(f, p, what):
+  try: return f(p)
+  except Exception as e: raise Exception(f"Could not load {what} for {p}.") from e
 
-def load_points(image_paths): 
-  out = {}
-  for p in image_paths:
-    try: out[p] = np.load(f'data/cache/points/{imgid(p)}.npy')
-    except Exception as e: raise Exception(f"Could not load points for image {p}.") from e
-  return out
+# TODO scrap cv dependency and use PIL or np of tiff # TODO! check if image is RGB or gray
+def load_image(path): return _try_load(lambda p: cv2.cvtColor(cv2.imread(p), cv2.COLOR_BGR2RGB), path, "image")
 
-def load_fgmasks(image_paths):
-  out = {}
-  for p in image_paths:
-    try: out[p] = np.load(f'data/cache/fgmasks/{imgid(p)}.npy')
-    except Exception as e: raise Exception(f"Could not load mask for image {p}.") from e
-  return out
+def load_points(path): return _try_load(lambda p: np.load(f'data/cache/points/{imgid(p)}.npy'), path, "points")
+
+def load_fgmask(path): return _try_load(lambda p: np.load(f'data/cache/fgmasks/{imgid(p)}.npy'), path, "fgmask")	
 
 
 class CellnetDataset(torch.utils.data.Dataset):
@@ -92,12 +78,12 @@ class CellnetDataset(torch.utils.data.Dataset):
     self.batch_size = noneor(batch_size, len(image_paths))
     self.maxdist=maxdist; self.fraction=fraction; self.sparsity=sparsity
     self.ids=image_paths; self.sigma=sigma; self.transforms = transforms if transforms else lambda **x:x    
-    self.data_quality = pd.read_csv('data/data_quality.csv', sep=r'\s+', index_col=0)
+    self.data_quality = pd.read_csv(data_quality_file, sep=r'\s+', index_col=0)
     
-    self.X = load_images(image_paths)  # NOTE albumentations=BHWC 可是 torch=BCHW
+    self.X = {i: load_image(i) for i in self.ids} # note albumentations=BHWC 但是 torch=BCHW
     if override_points is not None: self.P = override_points
-    else: self.P = {i: load_points([i])[i] if self.data_quality.loc[imgid(i)]['annotation_status']\
-                                              != 'empty' else no_points for i in image_paths} 
+    else: self.P = {i: load_points(i) if self.data_quality.loc[imgid(i)]['annotation_status']\
+                                         != 'empty' else no_points for i in image_paths} 
     # raise an error if not all image_paths have point annotations
     assert set(self.X.keys()) == set(self.P.keys()), f"The following images have no (cached) point annotations: {set(self.X.keys()) - set(self.P.keys())}"
 
@@ -107,15 +93,16 @@ class CellnetDataset(torch.utils.data.Dataset):
   def _generate_masks(self, fraction=1.0, sparsity=1.0):
     assert fraction>0 and sparsity>0, "fraction and sparsity must be positive (0,1]"
 
-    self.M = mask_sparse(self.ids, self.X, self.P, self.maxdist, channels=[0,1,2])  # TODO: derive channels from somewhere else
-
+    self.M = {}
     for i in self.ids:
       q = self.data_quality.loc[imgid(i)] 
       if q['annotation_status'] in ('fully', 'empty'): 
-        self.M[i] = np.ones_like(self.M[i])
+        self.M[i] = np.ones(self.X[i].shape[:2])
         print(f"INFO: Because {i} is fully annotated or purposefully empty, fgmask is set to 1")
       elif q['fgmask_status'] != "OK": 
         raise Exception(f"ERROR: {i} has fgmask_status {q['fgmask_status']}!=ok, but is not fully annotated. Don't know what to do with this image currently. Please fix or exclude from image_paths")
+      else:
+        self.M[i] = mask_sparse(i, self.X[i], self.P[i], self.maxdist, channels=[0,1,2]) # TODO: derive channels from somewhere else
 
     if (f:=fraction) < 1.0: 
       _s = self.X[self.ids[0]].shape
@@ -161,7 +148,7 @@ def mk_loader(image_paths, bs, transforms, cfg, shuffle=True, override_points=No
 
 def mk_XNorm(cfg, norm_using_images=['all']):# -> tuple[Callable[..., Normalize], dict[str, list[Any]]]:
   if norm_using_images == ['all']: norm_using_images = list(set(p for s in cfg.data_splits for tv in s for p in s))
-  X = dict2stack(load_images(norm_using_images), ids=None)
+  X = np.stack([load_image(i) for i in norm_using_images], axis=0)
   params = dict(
     mean = list(X.mean(axis=(0,1,2))/255),
     std  = list(X.std (axis=(0,1,2))/255),
@@ -200,17 +187,6 @@ def Keypoints2Heatmap(sigma, ynorm, labels_to_include=[1]):
     return torch.from_numpy(ynorm(Y)).permute(2,0,1).to(torch.float32)  # HWC -> CHW
   return f
 
-# DECRAP rmbad?
-def loss_per_point(b, lossf, kernel=15, exclude=[]):
-  loss = lossf.__class__(reduction='none')(*[torch.tensor(x) for x in [b.y, b.z]])
-  p2L = np.zeros(len(b.l))
-  for i, (l, (x,y)) in enumerate(zip(b.l, b.k)):
-    #if l in exclude: continue  # NOTE hack to exclude losses for negative annotations (TODO reevaluate why)
-    xx, yy = np.meshgrid(np.arange(loss.shape[2]), np.arange(loss.shape[1]))
-    k = (xx-x)**2 + (yy-y)**2 < kernel**2
-    p2L[i] = (loss * k).sum()
-  return p2L
-
 # this function expects [B][i][X,Y,L] and returns [B][H,W,C]
 def onehot(hw, P, channels=None):
   if channels is None: channels = list(set.union({0,1}, set(np.unique(P[:,:,2].astype(int)))))
@@ -220,11 +196,10 @@ def onehot(hw, P, channels=None):
       A[b, int(y), int(x), int(l)-1] = 1
   return A  # -> BHWC
 
-def mask_sparse(ids, X, P, maxdist, channels): 
-  D = dict2stack({i:onehot(X[ids[0]].shape[0:2], P[i][None], channels=channels)[0] for i in ids}, ids)
-  D = D.sum(axis=-1)  # all types of points are treated the same => we dont include the points for negative examples but we train on their image parts! :]
-  for b in range(len(P)):
-    D[b] = distance_transform_edt(1-D[b])
-  D = (D > maxdist).reshape(D.shape)
-  B = dict2stack(load_fgmasks(ids), ids)>0
-  return stack2dict(1-(B & D)[:,:,:,None].astype(np.float32), ids)
+def mask_sparse(id, x, p, maxdist, channels): 
+  d = onehot(x.shape[0:2], p[None], channels=channels)[0]
+  d = d.sum(axis=-1)  # all types of points are treated the same => we dont include the points for negative examples but we train on their image parts! :]
+  d = distance_transform_edt(1-d)
+  d = (d > maxdist).reshape(d.shape)  # type: ignore
+  fg = load_fgmask(id) > 0
+  return 1-(fg & d)[:,:,None].astype(np.float32)
