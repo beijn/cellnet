@@ -111,7 +111,7 @@ def count(images:list, model=None, plot=True):
 
   for i,image in enumerate(images):
     counts[image.name] = np.sum(Y[i])*model.settings["ymax"]
-    if plot: plots[image.name] = plotting.overlay(X[i].transpose(1,2,0)*S[i]+M[i], Y[i], args_image={'norm':False})
+    if plot: plots[image.name] = plotting.overlay(X[i].transpose(1,2,0)*S[i]+M[i], Y[i], args_images={'norm':False})
 
   return counts, plots
 

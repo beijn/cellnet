@@ -85,11 +85,11 @@ def image(img, ax=None, zoom=None, norm=True, **imshow_kwargs):
   return ax
 
 
-def overlay(x, y=None, m=None, k=None, l=None, sigma=5.0, ax=None, args_point={}, args_image={}):
-  ax = image(x, ax=ax, **args_image)
-  if m is not None: heatmap(1-m, ax=ax, alpha=lambda x: 0.5*x, color='#000000')
+def overlay(x, y=None, m=None, k=None, l=None, sigma=5.0, ax=None, args_points={}, args_images={}):
+  ax = image(x, ax=ax, **args_images)
+  if m is not None: heatmap(1-m, ax=ax, alpha=lambda x: 0.4*x, color='#000000')
   if y is not None: heatmap(y, ax=ax, alpha=lambda x: 1.0*x, color='#ff0000')
-  if k is not None and l is not None and len(k) and len(l): points(ax, k, l, sigma*1.5, **args_point)
+  if k is not None and l is not None and len(k) and len(l): points(ax, k, l, **({'radius':sigma*1.5}|args_points))
   return ax
 
 def diff(y, z, m=None, k=None, l=None, sigma=4.0, ax=None):

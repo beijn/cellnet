@@ -14,5 +14,13 @@ model_export*
 release.zip
 model.zip
 
+data.phase*
 data
 results 
+
+cfg.json
+
+# results
+plots 
+preds
+counts.json
