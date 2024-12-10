@@ -57,14 +57,9 @@ bash bin/install  # editable pip install of the cellnet package
 ```
 
 ### Data Setup
-- Create and populate the [`data`](./data) folder.
-- Interactively run [`pre_images.py`](./pre_images.py) and [`pre_points.py`](./pre_points.py) to prepare the data for the model.
+- run `bin/normalize-paths <folder>` for all data folders. eg. `bash bin/normalize-paths data/images && bash bin/normalize-paths data/annotations`
+- run `python preprocess_annotations.py` to convert the label-studio annotations to the internal training format.
 
-[`pre_images.py`](./pre_images.py) for the images in [`data/images`](./data/images) creates binary foreground/background masks in [`data/cache/fgmasks`](./data/cache/fgmasks) which help during training. Currently uses an unlicensed third-party model, which will not adapt to new image modalities and **should be replaced**. Their purpose is to include background in the training data, whereas foreground regions without point annotations are excluded. Please inspect the generated masks manually and update the `fgmask_status` column in [`data/data_quality.csv`](./data/data_quality.csv) accordingly with `ok` or `BAD`.
-
-[`pre_points.py`](./pre_points.py) converts the label-studio `<some name>..<ANNOTATOR>.json` point annotations in [`data`](./data) to `[x,y,label-id]` arrays in [`data/cache/points`](./data/cache/points). The annotators contributing to an image are saved to [`data/cache/annotators.json`](./data/cache/annotators.json). Merging annotations of different annotators is currently not implemeted. Draft code for filtering only 'agreeing' annotations is in [`utility/disagreeing-annotations.py`](./utility/disagreeing-annotations.py). Please manually update the `annotation_status` column in [`data/data_quality.csv`](./data/data_quality.csv) accordingly with `empty`, `sparse`, `fully`, `NISSING` or `CONFLICT`.
-
-Images with `BAD` masks, which are neither `empty` nor `fully` annotated are excluded from training. As well as images with `NISSING` or `CONFLICT`ing annotations.
 
 ### Training
 ```bash

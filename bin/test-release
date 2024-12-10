@@ -1,6 +1,8 @@
 #!/bin/bash
 
-testimage=${1:-data/images/1.jpg}
+# get first file in data/images folder
+
+testimage=${1:-data/images/$(ls data/images | head -n 1)}
 
 conda="micromamba"
 $conda shell init --shell=bash                     >/dev/null

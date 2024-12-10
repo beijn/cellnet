@@ -1,4 +1,4 @@
-name: labelstudio
+name: label-studio
 channels:
   - conda-forge
 dependencies:

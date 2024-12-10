@@ -1,15 +1,18 @@
 # NOTE on data format: this is all BHWC. Except Keypoints2Heatmap which is HWC. Torch needs BCHW, albumentations makes the conversions
 
-import pathlib
-import numpy as np, cv2, pandas as pd
+from math import inf
+import pathlib, os
+from PIL import Image
+
 from scipy.ndimage import gaussian_filter, distance_transform_edt
+import numpy as np, torch, torch.utils.data
 
-import torch, torch.utils.data
-
-import os
 import albumentations as A
 from types import SimpleNamespace as obj
 
+
+label2int = {'Live Cell':1, 'Cell':1, 'cell':1, 'Dead cell/debris':2, 'Debris':2, 'debris': 2,
+             'background': 1, 'Background': 1}
 
 key2text = {'tl': 'Training Loss',     'vl': 'Validation Loss', 
             'ta': 'Training Accuracy', 'va': 'Validation Accuracy', 
@@ -24,8 +27,7 @@ key2text = {'tl': 'Training Loss',     'vl': 'Validation Loss',
 
 no_points = np.ones((1,3), dtype=np.int32)*2  ### NOTE TODO: change dtype according to load_points 
 # NOTE: this is a hack to make the dataset work with images that have no points.
-
-noneor = lambda x, d: x if x is not None else d 
+# TODO: make later code correctly work with empty point arrays
 
 mapd = lambda d,f: {k:f(v) for k,v in d.items()}
 dict2stack = lambda D, ids: np.stack([D[i] for i in (ids if ids!=None else sorted(D.keys()))], axis=0) if len(D)>0 else np.zeros((0,0,0,0))
@@ -36,6 +38,7 @@ wrapDictAsStack = lambda f, ids: lambda D: stack2dict(f(dict2stack(D, ids)), ids
 def gpu(x, device): return torch.from_numpy(x).float().to(device)
 def cpu(x): return x.detach().cpu().numpy() if isinstance(x, torch.Tensor) else np.array(x) if isinstance(x, list) else x
 
+ospath = lambda p: os.path.join(*p.split('/'))
 
 def imgid(path): return pathlib.Path(path).stem
 
@@ -62,28 +65,36 @@ def _try_load(f, p, what):
   try: return f(p)
   except Exception as e: raise Exception(f"Could not load {what} for {p}.") from e
 
-# TODO scrap cv dependency and use PIL or np of tiff # TODO! check if image is RGB or gray
-def load_image(path): return _try_load(lambda p: cv2.cvtColor(cv2.imread(p), cv2.COLOR_BGR2RGB), path, "image")
+def load_image(path): 
+  x = _try_load(lambda p: np.array(Image.open(p)), path, "image")
+  information_channel = None
+  for j in range(x.shape[-1]):
+    if len(np.unique(x[...,j]))>1:
+      if information_channel is not None and not ((x[...,j] == x[...,information_channel]).all()): 
+        print(information_channel, j, np.unique(x[...,j]), np.unique(x[...,information_channel]))
+        raise ValueError(f"Image {path} has {x.shape[-1]} channels with information. Currently code only works with grayscale images. QUICK FIX: convert to grayscale. TODO: adjust code to handle RGB images as well.")
+      information_channel = j
+    
+  return x[...,[information_channel or 0]] 
 
 def load_points(path): return _try_load(lambda p: np.load(f'data/cache/points/{imgid(p)}.npy'), path, "points")
 
-def load_fgmask(path): return _try_load(lambda p: np.load(f'data/cache/fgmasks/{imgid(p)}.npy'), path, "fgmask")	
+def load_bgmask(path): return _try_load(lambda p: np.load(f'data/cache/masks/{imgid(p)}.npy')
+                                        [label2int['background']], path, "masks")	# note the [label2int['background']]
 
 
 class CellnetDataset(torch.utils.data.Dataset):
   def __init__(self, image_paths, sigma, maxdist, sparsity=1.0, fraction=1.0, batch_size=None, 
-               transforms=None, data_quality_file='data/data_quality.csv', override_points=None, **_junk):
+               transforms=None, override_points=None, not_sparsely_annotated_images=[], **_junk):
     super().__init__()
     if type(image_paths)==str: image_paths = [p for p in os.listdir(image_paths) if p.endswith('.jpg')]
-    self.batch_size = noneor(batch_size, len(image_paths))
-    self.maxdist=maxdist; self.fraction=fraction; self.sparsity=sparsity
+    self.batch_size = batch_size or len(image_paths)
+    self.maxdist=maxdist; self.fraction=fraction; self.sparsity=sparsity; self.not_sparsely_annotated_images=not_sparsely_annotated_images
     self.ids=image_paths; self.sigma=sigma; self.transforms = transforms if transforms else lambda **x:x    
-    self.data_quality = pd.read_csv(data_quality_file, sep=r'\s+', index_col=0)
     
     self.X = {i: load_image(i) for i in self.ids} # note albumentations=BHWC 但是 torch=BCHW
     if override_points is not None: self.P = override_points
-    else: self.P = {i: load_points(i) if self.data_quality.loc[imgid(i)]['annotation_status']\
-                                         != 'empty' else no_points for i in image_paths} 
+    else: self.P = {i: load_points(imgid(i)) for i in image_paths} 
     # raise an error if not all image_paths have point annotations
     assert set(self.X.keys()) == set(self.P.keys()), f"The following images have no (cached) point annotations: {set(self.X.keys()) - set(self.P.keys())}"
 
@@ -94,15 +105,12 @@ class CellnetDataset(torch.utils.data.Dataset):
     assert fraction>0 and sparsity>0, "fraction and sparsity must be positive (0,1]"
 
     self.M = {}
-    for i in self.ids:
-      q = self.data_quality.loc[imgid(i)] 
-      if q['annotation_status'] in ('fully', 'empty'): 
-        self.M[i] = np.ones(self.X[i].shape[:2])
-        print(f"INFO: Because {i} is fully annotated or purposefully empty, fgmask is set to 1")
-      elif q['fgmask_status'] != "OK": 
-        raise Exception(f"ERROR: {i} has fgmask_status {q['fgmask_status']}!=ok, but is not fully annotated. Don't know what to do with this image currently. Please fix or exclude from image_paths")
+    for I in self.ids:
+      if I in self.not_sparsely_annotated_images: 
+        self.M[I] = np.ones(self.X[I].shape[:2])
+        print(f"INFO: Because {I} is (eg fully annotated or purposefully empty), foreground mask is set to 1 everywhere.")
       else:
-        self.M[i] = mask_sparse(i, self.X[i], self.P[i], self.maxdist, channels=[0,1,2]) # TODO: derive channels from somewhere else
+        self.M[I] = mask_sparse(I, self.X[I], self.P[I], self.maxdist, channels=[0,1,2]) # TODO: derive channels from somewhere else
 
     if (f:=fraction) < 1.0: 
       _s = self.X[self.ids[0]].shape
@@ -197,9 +205,10 @@ def onehot(hw, P, channels=None):
   return A  # -> BHWC
 
 def mask_sparse(id, x, p, maxdist, channels): 
+  """Returns a mask that is 1 for annotated background or near annotated points, 0 elsewhere."""
   d = onehot(x.shape[0:2], p[None], channels=channels)[0]
   d = d.sum(axis=-1)  # all types of points are treated the same => we dont include the points for negative examples but we train on their image parts! :]
   d = distance_transform_edt(1-d)
   d = (d > maxdist).reshape(d.shape)  # type: ignore
-  fg = load_fgmask(id) > 0
+  fg = (1-load_bgmask(id)) > 0
   return 1-(fg & d)[:,:,None].astype(np.float32)

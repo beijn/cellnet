@@ -4,14 +4,14 @@ import numpy as np
 import itertools as it
 from statistics import mean
 
-try: 
+
+try:
   f = plt.figure()
   plt.close(f)
 except Exception as e:
-  print(f'NOTE: cellnet.plot will try switching to headless plotting, because {e.__class__.__name__}: {e}')
+  print(f'NOTE: cellnet.plot will try switching to headless plotting')
   import matplotlib
   matplotlib.use("Agg")
-
 
 ZOOM = 1
 def set_zoom(zoom): 
@@ -71,6 +71,8 @@ def image(img, ax=None, zoom=None, norm=True, **imshow_kwargs):
   if img.ndim == 3 and img.shape[0] in (1,3,4): img = np.transpose(img, (1,2,0))
   assert img.ndim == 2 or (img.ndim == 3 and (img.shape[0] in (1,3,4) or img.shape[-1] in (1,3,4))), \
     f"Plot only 2D gray or RGB(A)-channel-last images. Got shape {img.shape}."
+  if img.ndim == 3 and img.shape[-1] == 1: img = img[:,:,0]
+  elif img.ndim == 3 and img.shape[0] == 1: img = img[0]
 
   if ax == None:
     # no whitespace and 1:1 pixel resolution
@@ -79,15 +81,19 @@ def image(img, ax=None, zoom=None, norm=True, **imshow_kwargs):
     fig.set_size_inches(img.shape[1]/fig.dpi*zoom, img.shape[0]/fig.dpi*zoom)  
     ax.axis('off')
 
+  if img.dtype == bool: img = img.astype(np.uint8)*255
+
   if norm: img = (img - img.min()) / (1e-9+ img.max() - img.min())  # NOTE: else user has to ensure that image is in [0,1]
   elif (max:=img.max()) > 1 and max <= 255 and img.min() >= 0: img /= 255
+
+  if img.ndim == 2: imshow_kwargs['cmap'] = 'gray'
   ax.imshow(img, interpolation='none', **imshow_kwargs)
   return ax
 
 
 def overlay(x, y=None, m=None, k=None, l=None, sigma=5.0, ax=None, args_points={}, args_images={}):
   ax = image(x, ax=ax, **args_images)
-  if m is not None: heatmap(1-m, ax=ax, alpha=lambda x: 0.4*x, color='#000000')
+  if m is not None: heatmap(1-m, ax=ax, alpha=lambda x: 0.4*x, color='#440088')
   if y is not None: heatmap(y, ax=ax, alpha=lambda x: 1.0*x, color='#ff0000')
   if k is not None and l is not None and len(k) and len(l): points(ax, k, l, **({'radius':sigma*1.5}|args_points))
   return ax

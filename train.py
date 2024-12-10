@@ -3,6 +3,7 @@
 
 # %% # Config and Imports
 
+# TODO: refactor config setup, so its a standard config |= an experiment specific settings dict. Implment gridsearch via seperate notbook
 # after experiment successful, summarize findings in respective ipynb and integrate into defaults
 experiments = dict(
   default =     ('default', True), 
@@ -26,10 +27,9 @@ experiments = dict(
 from cellnet import data
 import pandas as pd
 
-data_quality = pd.read_csv('data/data_quality.csv', sep=r'\s+', index_col=0)
-
-image_paths = [i for i in data.ls('data/images') if data_quality.loc[data.imgid(i), 'annotation_status'] in ('fully', 'sparse', 'empty')]
-crossval_vals = '1 | 2 | QS_7510'# | QS_7415' # NOTE that with the empty image the accuracy formula breaks
+image_paths = ['data/images/2024-08-30_09-13-04scl2969_Overlay.tiff']
+crossval_vals = '2024-08-30_09-13-04scl2969_Overlay'
+# NOTE that with empty images the accuracy formula breaks -> TODO fix
 
 
 import os, torch, json
@@ -50,9 +50,9 @@ if MODE not in modes: MODE = 'crossval'
 MODE = 'demo'
 
 if MODE=='demo': 
-  image_paths = ['data/images/1.jpg']
-  data_splits = [(['data/images/1.jpg'], [])]
-elif MODE=='draft': data_splits = [(['data/images/1.jpg'], ['data/images/4.jpg'])]
+  image_paths = [image_paths[0]]
+  data_splits = [([image_paths[0]], [])]
+elif MODE=='draft': data_splits = [([image_paths[0]], [image_paths[-1]])]
 elif MODE=='release': data_splits = [(image_paths, [])]
 else: #MODE=='crossval': 
   crossval_vals = [s.split(' ') for s in crossval_vals.split(' | ')]
@@ -67,7 +67,7 @@ CFG = obj(**(dict(
   batch_size=16,
   data_splits=data_splits,
   device=f'{device}',
-  epochs=351,
+  epochs=1 if MODE=='demo' else 2 if MODE=='draft' else 251,
   fraction=1, 
   image_paths=image_paths,
   lossf='MSE+BCE',
@@ -97,7 +97,6 @@ import albumentations as A; from albumentations.pytorch import ToTensorV2
 
 import os, json
 from types import SimpleNamespace as obj
-from statistics import mean, stdev
 
 from cellnet.data import *
 import cellnet.plot as plot
@@ -140,7 +139,6 @@ def mkAugs(mode):
                *vals, XNorm()])
   )[mode]
 
-
 # %% # Plot data 
 if (MODE == 'draft' and not CUDA) or 'demo': 
   def norm01(x):
@@ -161,13 +159,15 @@ if (MODE == 'draft' and not CUDA) or 'demo':
     b = batch2cpu(B, z=kp2hm(B))[0]
     if MODE=='demo': 
       #ax = plot.overlay(b.x); b.x = norm01(b.x)
-      b.fg = load_fgmask(i:=CFG.image_paths[0])
-      ax = plot.overlay(b.x)
-      ax = plot.overlay(b.x, None, None, b.k, b.l, args_points=dict(marker='.', radius=7, colormap={1: 'red', 2: '#7700ff'}, alpha=1))
-      ax = plot.overlay(b.x, b.z, None)
-      ax = plot.overlay(b.x, b.z, b.fg)
+      b.fg = 1-load_bgmask(i:=CFG.image_paths[0])
+      #ax = plot.overlay(b.x)
+      #ax = plot.overlay(b.x, None, None, b.k, b.l, args_points=dict(marker='.', radius=7, colormap={1: 'red', 2: '#7700ff'}, alpha=1))
+      #ax = plot.overlay(b.x, b.z, None)
+      #ax = plot.overlay(b.x, b.z, b.fg)
       ax = plot.overlay(b.x, b.z, b.m)
-
+      from matplotlib.patheffects import PathPatchEffect, SimpleLineShadow, Normal
+      ax.text(b.x.shape[2]/2, b.x.shape[1]*0+50, imgid(i), ha='center', va='center', fontsize=5000, color='#ffffff', 
+              path_effects=[SimpleLineShadow(shadow_color="black", linewidth=800, ),Normal()])
     else: 
       ax = plot.overlay(b.x, b.z, b.m, b.k, b.l, CFG.sigma)
 
@@ -182,7 +182,7 @@ import segmentation_models_pytorch as smp
 mk_mk_model_smp = lambda cls, encoder_depth=5, **args: lambda cfg: cls(
   encoder_name=cfg.model_encoder, 
   encoder_weights=None,
-  in_channels=3,
+  in_channels=1,
   classes=1,
   activation='sigmoid',
   encoder_depth=encoder_depth,
