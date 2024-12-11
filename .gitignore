@@ -18,10 +18,10 @@ data.phase*
 data
 results 
 
-cfg.json
+settings.json
 
 # results
 plots 
 preds
 counts.json
-results.csv 
+log*.csv 

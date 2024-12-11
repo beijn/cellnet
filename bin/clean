@@ -1,2 +1,9 @@
 #!/bin/bash
-rm -rf preds plots counts.json cfg.json results.csv
+
+what="preds plots log.csv counts.json settings.json"
+
+## ask for confirmation
+echo "This will remove the following files and directories:"
+echo $what
+echo "Are you sure you want to continue? (y/n)"
+read answer && rm -rf "$what" || echo "Aborted" 

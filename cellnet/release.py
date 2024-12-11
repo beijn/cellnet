@@ -1,11 +1,7 @@
-import re
-import torch
-import segmentation_models_pytorch as smp
+# TODO implement model voting for crossval
 
-import numpy as np
-
-import json, zipfile, shutil, os, sys
-
+import re, json, zipfile, shutil, os, sys
+import numpy as np, torch, segmentation_models_pytorch as smp
 import cellnet, cellnet.data as data, cellnet.plot as plotting
 from cellnet.internet import download, GHAPI
 
@@ -144,4 +140,3 @@ if __name__ == '__main__':
   if os.path.isfile('counts.json'): 
     counts = json.load(open('counts.json')) | counts
   json.dump(counts, open('counts.json', 'w'), indent=2, sort_keys=True)
- 

@@ -1,17 +1,18 @@
 # NOTE on data format: this is all BHWC. Except Keypoints2Heatmap which is HWC. Torch needs BCHW, albumentations makes the conversions
 
 import pathlib, os
+from types import SimpleNamespace as obj
 from PIL import Image
 
 from scipy.ndimage import gaussian_filter, distance_transform_edt
 import numpy as np, torch, torch.utils.data
 
 import albumentations as A
-from types import SimpleNamespace as obj
+from albumentations.pytorch import ToTensorV2
 
+from cellnet.config import *
 
-# check the CELLNET_DRAFT_MODE variable
-DRAFT_MODE = os.environ.get('CELLNET_DRAFT_MODE', False) 
+if DRAFT: print(f"NOTE: DRAFT mode for data loading is {'ON' if DRAFT else 'OFF'}. With ON will crop images to 128x128.")
 
 label2int = {'Live Cell':1, 'Cell':1, 'cell':1, 'Dead cell/debris':2, 'Debris':2, 'debris': 2,
              'background': 1, 'Background': 1}
@@ -64,7 +65,7 @@ def wrap_padded(f, multiple=32, mode='reflect'):
     s = x.shape; m = multiple
     istensor = isinstance(x, torch.Tensor)
     x_padded = torch.nn.functional.pad(x, (0, m - s[-1] % m,  0, m - s[-2] % m), mode=mode) if istensor else\
-      np.pad(x, ((0,0), (0,0), (0, m - s[-2] % m), (0, m - s[-1] % m)), mode=mode) # type: ignore
+      np.pad(x, ((0,0), (0,0), (0, m - s[-2] % m), (0, m - s[-1] % m)), mode=mode) # type:ignore
     print(x.shape, x_padded.shape)
     y_padded = f(x_padded)
     print(y_padded.shape, y_padded[..., :s[-2], :s[-1]].shape)
@@ -89,13 +90,15 @@ def load_image(path):
         raise ValueError(f"Image {path} has {x.shape[-1]} channels with information. Currently code only works with grayscale images. QUICK FIX: convert to grayscale. TODO: adjust code to handle RGB images as well.")
       information_channel = j    
   x = x[...,[information_channel or 0]]
-  return x[:256,:256] if DRAFT_MODE else x
+  if DRAFT: print(f"WARNING: DRAFT MODE: Cropping image to 128x128.") # TODO REMOVE
+  return x[:128,:128] if DRAFT else x
 
 def load_points(path): return _try_load(lambda p: np.load(f'data/cache/points/{imgid(p)}.npy'), path, "points")
 
 def load_bgmask(path): 
   r = _try_load(lambda p: np.load(f'data/cache/masks/{imgid(p)}.npy')[label2int['background']], path, "masks")	
-  return r[:256,:256] if DRAFT_MODE else r
+  if DRAFT: print(f"WARNING: DRAFT MODE: Cropping mask to 128x128.") # TODO REMOVE
+  return r[:128,:128] if DRAFT else r
 
 class CellnetDataset(torch.utils.data.Dataset):
   def __init__(self, image_paths, sigma, maxdist, sparsity=1.0, fraction=1.0, batch_size=None, 
@@ -175,7 +178,7 @@ def mk_loader(image_paths, bs, transforms, cfg, shuffle=True, override_points=No
 
 
 def mk_XNorm(cfg, norm_using_images=['all']):# -> tuple[Callable[..., Normalize], dict[str, list[Any]]]:
-  if norm_using_images == ['all']: norm_using_images = list(set(p for s in cfg.data_splits for tv in s for p in s))
+  if norm_using_images == ['all']: norm_using_images = cfg.image_paths
   X = np.stack([load_image(i) for i in norm_using_images], axis=0)
   params = dict(
     mean = list(X.mean(axis=(0,1,2))/255),
@@ -185,9 +188,9 @@ def mk_XNorm(cfg, norm_using_images=['all']):# -> tuple[Callable[..., Normalize]
   return (lambda **kw: A.Normalize(normalization='standard' if cfg.xnorm_type=='imagenet' else cfg.xnorm_type, **params, **kw)), params
 
 
-def mk_kp2mh_yunnorm(cfg, norm_using_images=['all'], **overwrite_cfg):
+def mk_kp2hm_yunnorm(cfg, norm_using_images=['all'], **overwrite_cfg):
   """Z-score norm improves DNN training according to @lecun2002efficient. BWHC"""
-  if norm_using_images == ['all']: norm_using_images = list(set(p for s in cfg.data_splits for tv in s for p in tv))
+  if norm_using_images == ['all']: norm_using_images = cfg.image_paths
   ds = CellnetDataset(**(cfg.__dict__ | dict(image_paths=norm_using_images) | overwrite_cfg))
 
   Y = np.stack([Keypoints2Heatmap(cfg.sigma, ynorm=lambda y:y, labels_to_include=[1])(
@@ -199,8 +202,8 @@ def mk_kp2mh_yunnorm(cfg, norm_using_images=['all'], **overwrite_cfg):
   yunnorm = lambda y: y*ymax
   # Y = ((Y - ymean) / ystd).astype(np.float32)  # unit norm, using dataset wide mean and std
 
-  kp2mh = batched(Keypoints2Heatmap(cfg.sigma, ynorm, labels_to_include=[1]))
-  return kp2mh, yunnorm, ymax
+  kp2hm = batched(Keypoints2Heatmap(cfg.sigma, ynorm, labels_to_include=[1]))
+  return kp2hm, yunnorm, ymax
 
 
 # HWC - this function works not with a batch dimension
@@ -230,8 +233,40 @@ def mask_sparse(id, x, p, maxdist, channels):
   d = onehot(x.shape[0:2], p[None], channels=channels)[0]
   d = d.sum(axis=-1)  # all types of points are treated the same => we dont include the points for negative examples but we train on their image parts! :]
   d = distance_transform_edt(1-d)
-  d = (d > maxdist).reshape(d.shape)  # type: ignore
+  d = (d > maxdist).reshape(d.shape)  # type:ignore
   fg = (1-load_bgmask(id)) > 0
   if fg.shape != d.shape: print(f"WARNING: Cropping mask out of bounds for {imgid(id)}.")
   fg = fg[:d.shape[0], :d.shape[1]]
   return 1-(fg & d)[:,:,None].astype(np.float32)
+
+
+def mkAugs(mode, cfg):
+  XNorm,_ = mk_XNorm(cfg, cfg.image_paths)
+
+  C = cfg.cropsize
+  T = lambda ts:  A.Compose(transforms=[
+    A.PadIfNeeded(C,C, border_mode=0, value=0),
+    *ts,
+    A.PadIfNeeded(C,C, border_mode=0, value=0),
+    ToTensorV2(transpose_mask=True, always_apply=True)], 
+    keypoint_params=A.KeypointParams(format='xy', label_fields=['class_labels'], remove_invisible=True) 
+  )
+
+  vals = [A.D4(),
+          ]
+
+  return dict(
+    demo  = T([]),
+    test  = T([XNorm()]),
+    val   = T([A.RandomCrop(C,C, p=1),
+               *vals, XNorm()]),
+    train = T([A.RandomCrop(C,C, p=1),
+               A.RandomBrightnessContrast(p=1, brightness_limit=0.25, contrast_limit=0.25),
+               #A.RandomSizedCrop(p=1, min_max_height=(CROPSIZE//2, CROPSIZE*2), height=CROPSIZE, width=CROPSIZE),  # NOTE: issue with resize is that the keypoint sizes will not be updated
+               #A.Rotate(),
+               #A.AdvancedBlur(),
+               #A.Equalize(),
+               #A.ColorJitter(), 
+               #A.GaussNoise(),
+               *vals, XNorm()])
+  )[mode]

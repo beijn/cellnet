@@ -112,7 +112,7 @@ def save(ax, path, transparent=False):
 
 
 # TODO use seaborn and overlay KDE to easier see progress despite noise
-def train_graph(epochs, log, keys=None, clear=False, info={}, key2text={}, accuracy=True, vi=[], **unknown):
+def train_graph(epochs, log, keys=None, clear=False, info={}, key2text={}, accuracy=True, crossval_idx=0, **junk):
   if clear: 
     from IPython.display import clear_output
     clear_output(wait=True)
@@ -122,9 +122,8 @@ def train_graph(epochs, log, keys=None, clear=False, info={}, key2text={}, accur
   if not accuracy: axs = [axs]
 
   for ax, T in zip(axs, ['Loss', 'Accuracy']):
-    title = f"Training {T}\nvi: {', '.join([imgid(i) for i in vi])}. {', '.join([f'{key2text.get(k, k)}: {v}' for k,v in [('e', epochs), *info.items()]])}"
+    title = f"Training {T}\ncrossval #{crossval_idx}, {', '.join([f'{key2text.get(k, k)}: {v}' for k,v in [('e', epochs), *info.items()]])}"
     ax.set_title(title)
-    print(title)
 
   for key in (log if keys is None else keys):
     if key in "lr tl vl".split(' '): ax = axs[0]
