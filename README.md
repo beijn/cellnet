@@ -51,8 +51,9 @@ Workflow Overview:
 git clone git@github.com:beijn/cellnet.git
 cd cellnet
 git switch draft  # optional: development branch
-mircomamba create -yf cellnet.yml || conda env create -yf cellnet.yml
-micromanba activate cellnet || conda activate cellnet
+mircomamba remove -n cellnet --all || conda remove -n cellnet --all
+mircomamba create -yf cellnet.yml || conda env create -y --file cellnet.yml
+micromamba activate cellnet || conda activate cellnet
 bash bin/install  # editable pip install of the cellnet package
 ```
 
