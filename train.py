@@ -47,7 +47,7 @@ if MODE not in modes: MODE = 'crossval'
 # MODE undefined => interactive execution with draft; uknown custom tag defaults to crossval
 
 
-MODE = 'demo'
+if os.uname().nodename == 'eli': MODE = 'draft'
 
 if MODE=='demo': 
   image_paths = [image_paths[0]]
@@ -67,7 +67,7 @@ CFG = obj(**(dict(
   batch_size=16,
   data_splits=data_splits,
   device=f'{device}',
-  epochs=1 if MODE=='demo' else 2 if MODE=='draft' else 251,
+  epochs=1 if MODE in ('demo', 'draft') else 251,
   fraction=1, 
   image_paths=image_paths,
   lossf='MSE+BCE',
@@ -75,8 +75,8 @@ CFG = obj(**(dict(
   lr_steps=2.5,
   maxdist=26, 
   MODE=MODE,
-  model_architecture='smp.UnetPlusPlus:attention',
-  model_encoder='timm-mobilenetv3_large_100',
+  model_architecture='smp.Unet',#'smp.UnetPlusPlus:attention',
+  model_encoder='resnet34',#'timm-mobilenetv3_large_100',
   param=P,
   sigma=5.0,  # NOTE: do grid search again later when better convergence 
   sparsity=1,
@@ -140,6 +140,7 @@ def mkAugs(mode):
   )[mode]
 
 # %% # Plot data 
+"""
 if (MODE == 'draft' and not CUDA) or 'demo': 
   def norm01(x):
     x = x.transpose(1,2,0)
@@ -173,7 +174,7 @@ if (MODE == 'draft' and not CUDA) or 'demo':
 
   plot_grid((3,3), transforms=mkAugs('val'))
   plot_grid((3,3), transforms=mkAugs('train'))
- 
+"""
 # %% # Create model 
 plt.close('all')
 
@@ -197,6 +198,23 @@ mk_model = lambda c: {
   'smp.UnetPlusPlus': mk_mk_model_smp(smp.UnetPlusPlus),
   'smp.UnetPlusPlus:attention': mk_mk_model_smp(smp.UnetPlusPlus, decoder_attention_type='scse'),
 }[c.model_architecture]
+
+def save_model(model, CFG, _ymax):
+  B = next(iter(mk_loader([CFG.image_paths[0]], cfg=CFG, bs=1, transforms=mkAugs('test'), shuffle=False)))
+  m=model#type: ignore
+  m.eval()
+
+  # save a test in/out
+  #os.makedirs(cachedir:=os.path.expanduser('~/.cache/cellnet'), exist_ok=True)
+  #x = batch2cpu(B)[0].x[None]
+  #np.save('./model_export_test_x_1.npy', x)
+  #np.save('./model_export_test_y_1.npy', cpu(m(gpu(x, device=device))))
+
+  m.save_pretrained('./model_export')  # specific to master branch of SMP. TODO: make more robust with onnx. But see problem notes in cellnet.yml
+  os.remove('./model_export/README.md')
+
+  settings = (CFG.__dict__ | {'ymax':float(_ymax)})
+  with open('./model_export/settings.json', 'w') as f:  json.dump(settings, f, indent=2)
 
 # %% # Train 
 
@@ -285,21 +303,25 @@ def training_run(cfg, traindl, valdl, kp2hm, model):
 
   results = pd.DataFrame([row]) if results.empty else pd.concat([results, pd.DataFrame([row])], ignore_index=True)
   
-  # NOTE DUPLICATE COMPUTATIOM partial overlap with evaluate_performance
+  # NOTE DUPLICATE COMPUTATION partial overlap with evaluate_performance. TODO easiest is to implement a caching decorator?
   @debug.timeit
   def plot_preds():
     # plot and save predictions to disk
     for i in ti+vi:
       B = next(iter(mk_loader([i], bs=1, transforms=mkAugs('test'), shuffle=False, cfg=cfg)))
+
+      @data.wrap_padded
+      def infer(x): return cpu(model(x.to(device)))
+
       model.eval()
-      with torch.no_grad(): y = cpu(model(B['image'].to(device)))
+      with torch.no_grad(): y = infer(B['image'])
       B = batch2cpu(B, z=kp2hm(B), y=y)[0]
 
       if (MODE=='release' or (i in vi)):  # plot all validation images (hopefully) once per CFG.param
         ax1 = plot.overlay(B.x, B.y, B.m, B.k, B.l, cfg.sigma) 
         ax2 = plot.diff   (B.y, B.z, B.m, B.k, B.l, cfg.sigma)
         ax3 = None
-    
+  
   plot_preds()
 
   return log
@@ -340,28 +362,9 @@ for p in [_ps[-1]] if MODE=='draft' else _ps:
     except Exception as e: 
       print(f"ERROR: Exception {e.__class__.__name__} in model training (train.training_run). CFG:\n", json.dumps(cfg.__dict__, indent=2))
       raise e
-    if MODE!='release': del model
   
-# %%
-# TODO maybe modularize model saving so it can be used to cache models from different experiments from P:ps
-if MODE=='release': # save model to disk
-  B = next(iter(mk_loader([CFG.image_paths[0]], cfg=CFG, bs=1, transforms=mkAugs('test'), shuffle=False)))
-  x = batch2cpu(B)[0].x[None]
-  
-  m=model#type: ignore
-  m.eval()
-
-  # save a test in/out
-  #os.makedirs(cachedir:=os.path.expanduser('~/.cache/cellnet'), exist_ok=True)
-  #np.save('./model_export_test_x_1.npy', x)
-  #np.save('./model_export_test_y_1.npy', cpu(m(gpu(x, device=device))))
-
-  m.save_pretrained('./model_export')  # specific to master branch of SMP. TODO: make more robust with onnx. But see problem notes in cellnet.yml
-  os.remove('./model_export/README.md')
-
-  settings = (CFG.__dict__ | {'ymax':float(_ymax)})
-
-  with open('./model_export/settings.json', 'w') as f:  json.dump(settings, f, indent=2)
+# %% # save model to disk
+save_model(model, CFG, _ymax) # type: ignore
 
 if type(results[P][0]) == str: results[P] = results[P].apply(lambda s: "'"+s+"'")
 results.to_csv('results.csv', index=False, sep=';')
@@ -373,7 +376,7 @@ if MODE != 'release':  # HACK, fix this
   from cellnet import plot
   from cellnet.data import key2text
   from io import StringIO
-  import ast, csv, pandas as pd
+  import ast, pandas as pd
 
   ## TODO those nans
   with open('results.csv', 'r') as f:

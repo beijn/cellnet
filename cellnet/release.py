@@ -2,13 +2,11 @@ import re
 import torch
 import segmentation_models_pytorch as smp
 
-from PIL import Image
 import numpy as np
 
 import json, zipfile, shutil, os, sys
 
-import cellnet
-import cellnet.plot as plotting
+import cellnet, cellnet.data as data, cellnet.plot as plotting
 from cellnet.internet import download, GHAPI
 
 GH = GHAPI('beijn/cellnet')
@@ -32,7 +30,7 @@ def get_newest_compatible_model_version():
 
 # TODO: restrict to compatible versions?
 def init_model(version:str|None='latest', keep_download_cache=True):
-  cache = './.cache/cellnet'
+  cache = '.' if version == 'local' else './.cache/cellnet' 
   os.makedirs(cache, exist_ok=True)
   modeldir = version if type(version) is str and os.path.isdir(version) else f'{cache}/model_export'
   versionfile = f'{modeldir}/version.json'
@@ -40,8 +38,8 @@ def init_model(version:str|None='latest', keep_download_cache=True):
   if version == None: version = 'latest'
   islatest = version == 'latest'
 
-  # if the version is None, we just use whatever is cached or redownload the latest if it's not cached
-  if not (version == None and os.path.isdir(modeldir)): 
+  # if the version is None or local, we just use whatever is cached or redownload the latest if it's not cached
+  if not (version in (None, 'local') and os.path.isdir(modeldir)): 
     if version == 'latest': 
       version = GH.get_latest_release()
       if not is_compatible(version):
@@ -87,7 +85,7 @@ def init_model(version:str|None='latest', keep_download_cache=True):
   return model.to(DEVICE)
 
 def load_image(image_file_descriptor, model_settings):
-  X = np.array(Image.open(image_file_descriptor))[..., [0,1,2]]
+  X = data.load_image(image_file_descriptor)
   match model_settings['xnorm_type']:
     case 'imagenet': 
       m, s = [np.array(model_settings['xnorm_params'][k], dtype=np.float32)  * 255   for k in ('mean', 'std')]
@@ -96,7 +94,6 @@ def load_image(image_file_descriptor, model_settings):
     case other: raise ValueError(f"Unknown xnorm_type '{other}' in model.settings")
   X = ((X - m) / s).transpose(2, 0, 1)
   return X,m,s
-
 
 def count(images:list, model=None, plot=True):
   if model is None or type(model) == str:  
@@ -107,7 +104,10 @@ def count(images:list, model=None, plot=True):
   X,M,S = zip(*(load_image(i, model.settings) for i in images))
   X = np.stack(X)
   if os.uname().nodename == 'eli': X=X[:,:,:256,:256]  # NOTE for development on laptop. TODO implement tiled inference
-  Y = model(torch.tensor(X).float().to(DEVICE)).detach().cpu().numpy()
+  
+  @data.wrap_padded
+  def infer(x): return model(torch.tensor(x).float().to(DEVICE)).detach().cpu().numpy()
+  Y = infer(X)
 
   for i,image in enumerate(images):
     counts[image.name] = np.sum(Y[i])*model.settings["ymax"]

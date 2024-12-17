@@ -29,7 +29,7 @@ no_points = np.ones((1,3), dtype=np.int32)*2  ### NOTE TODO: change dtype accord
 # NOTE: this is a hack to make the dataset work with images that have no points.
 # TODO: make later code correctly work with empty point arrays
 
-mapd = lambda d,f: {k:f(v) for k,v in d.items()}
+mapd = lambda d,f: {k:f(k,v) for k,v in d.items()}
 dict2stack = lambda D, ids: np.stack([D[i] for i in (ids if ids!=None else sorted(D.keys()))], axis=0) if len(D)>0 else np.zeros((0,0,0,0))
 stack2dict = lambda S, ids: {i:S[idx] for idx,i in enumerate(ids)}
 wrapDictAsStack = lambda f, ids: lambda D: stack2dict(f(dict2stack(D, ids)), ids)
@@ -56,6 +56,18 @@ batch2cpu = lambda B, z=None, y=None: [obj(**{k:cpu(v) for v,k in zip(b, 'xmklzy
               for b in zip(B['image'], B['masks'][0], B['keypoints'], B['class_labels'], 
               *([] if z is None else [z]), *([] if y is None else [y]))]
 
+def wrap_padded(f, multiple=32, mode='reflect'):
+  """NOTE: expects BCHW"""
+  def inner(x):
+    s = x.shape; m = multiple
+    istensor = isinstance(x, torch.Tensor)
+    x_padded = torch.nn.functional.pad(x, (0, m - s[-1] % m,  0, m - s[-2] % m), mode=mode) if istensor else\
+      np.pad(x, ((0,0), (0,0), (0, m - s[-2] % m), (0, m - s[-1] % m)), mode=mode) # type: ignore
+    print(x.shape, x_padded.shape)
+    y_padded = f(x_padded)
+    print(y_padded.shape, y_padded[..., :s[-2], :s[-1]].shape)
+    return y_padded[..., :s[-2], :s[-1]] 
+  return inner
 
 def ls(dir, ext='', stem=False): 
   return sorted([((lambda f: pathlib.Path(f).stem) if stem else (lambda x:x))(
@@ -73,15 +85,13 @@ def load_image(path):
       if information_channel is not None and not ((x[...,j] == x[...,information_channel]).all()): 
         print(information_channel, j, np.unique(x[...,j]), np.unique(x[...,information_channel]))
         raise ValueError(f"Image {path} has {x.shape[-1]} channels with information. Currently code only works with grayscale images. QUICK FIX: convert to grayscale. TODO: adjust code to handle RGB images as well.")
-      information_channel = j
-    
-  return x[...,[information_channel or 0]] 
+      information_channel = j    
+  return x[...,[information_channel or 0]]
 
 def load_points(path): return _try_load(lambda p: np.load(f'data/cache/points/{imgid(p)}.npy'), path, "points")
 
 def load_bgmask(path): return _try_load(lambda p: np.load(f'data/cache/masks/{imgid(p)}.npy')
                                         [label2int['background']], path, "masks")	# note the [label2int['background']]
-
 
 class CellnetDataset(torch.utils.data.Dataset):
   def __init__(self, image_paths, sigma, maxdist, sparsity=1.0, fraction=1.0, batch_size=None, 
@@ -102,7 +112,12 @@ class CellnetDataset(torch.utils.data.Dataset):
 
 
   def _generate_masks(self, fraction=1.0, sparsity=1.0):
-    assert fraction>0 and sparsity>0, "fraction and sparsity must be positive (0,1]"
+    assert fraction>0 and sparsity>0, "fraction and sparsity must both be (0,1]"
+
+    for i in self.ids:
+      _len = len(self.P[i])
+      self.P[i] = self.filter_points_outside(i, self.P[i])
+      if _len != len(self.P[i]): print(f"WARNING: Removing points out of bounds: {_len-len(self.P[i])} points annotated outside of image {imgid(i)}.")
 
     self.M = {}
     for I in self.ids:
@@ -115,18 +130,19 @@ class CellnetDataset(torch.utils.data.Dataset):
     if (f:=fraction) < 1.0: 
       _s = self.X[self.ids[0]].shape
       x,y = int(_s[0]*f), int(_s[1]*f)
-      self.X = mapd(self.X, lambda a: a[:x,:y])
-      self.M = mapd(self.M, lambda a: a[:x,:y])
+      self.X = mapd(self.X, lambda _k,a: a[:x,:y])
+      self.M = mapd(self.M, lambda _k,a: a[:x,:y])
 
-    # filter out all points outside of X
-    self.P = {i: np.array([(x,y,l) for x,y,l in self.P[i] 
-                           if  0 <= x < self.X[i].shape[1] 
-                           and 0 <= y < self.X[i].shape[0]]) 
-                 for i in self.ids}
-    self.P = {i: no_points if len(P)==0 else P for i,P in self.P.items()}
+    self.P = mapd(self.P, self.filter_points_outside)
 
     if (s:=sparsity) < 1.0:
-      self.P = mapd(self.P, lambda a: a[::int(1/s)])
+      self.P = mapd(self.P, lambda _k,a: a[::int(1/s)])
+
+  def filter_points_outside(self, i, P):
+    r = np.array([(x,y,l) for x,y,l in P
+                     if  0 <= x < self.X[i].shape[1] 
+                     and 0 <= y < self.X[i].shape[0]])
+    return r if len(r)>0 else no_points 
    
   def get(self, n): return getattr(self, n)
   def set(self, n, to): setattr(self, n, to)
@@ -204,6 +220,7 @@ def onehot(hw, P, channels=None):
       A[b, int(y), int(x), int(l)-1] = 1
   return A  # -> BHWC
 
+# TODO crop mask to image size and print warning
 def mask_sparse(id, x, p, maxdist, channels): 
   """Returns a mask that is 1 for annotated background or near annotated points, 0 elsewhere."""
   d = onehot(x.shape[0:2], p[None], channels=channels)[0]
@@ -211,4 +228,6 @@ def mask_sparse(id, x, p, maxdist, channels):
   d = distance_transform_edt(1-d)
   d = (d > maxdist).reshape(d.shape)  # type: ignore
   fg = (1-load_bgmask(id)) > 0
+  if fg.shape != d.shape: print(f"WARNING: Cropping mask out of bounds for {imgid(id)}.")
+  fg = fg[:d.shape[0], :d.shape[1]]
   return 1-(fg & d)[:,:,None].astype(np.float32)
