@@ -1,6 +1,5 @@
 # NOTE on data format: this is all BHWC. Except Keypoints2Heatmap which is HWC. Torch needs BCHW, albumentations makes the conversions
 
-from math import inf
 import pathlib, os
 from PIL import Image
 
@@ -86,12 +85,13 @@ def load_image(path):
         print(information_channel, j, np.unique(x[...,j]), np.unique(x[...,information_channel]))
         raise ValueError(f"Image {path} has {x.shape[-1]} channels with information. Currently code only works with grayscale images. QUICK FIX: convert to grayscale. TODO: adjust code to handle RGB images as well.")
       information_channel = j    
-  return x[...,[information_channel or 0]]
+  return x[...,[information_channel or 0]][:256,:256]  # TODO DEBUG WARN REMOVE
 
 def load_points(path): return _try_load(lambda p: np.load(f'data/cache/points/{imgid(p)}.npy'), path, "points")
 
 def load_bgmask(path): return _try_load(lambda p: np.load(f'data/cache/masks/{imgid(p)}.npy')
-                                        [label2int['background']], path, "masks")	# note the [label2int['background']]
+                                        [label2int['background']][:256,:256]  # TODO DEBUG WARN REMOVE
+                                        , path, "masks")	# note the [label2int['background']]
 
 class CellnetDataset(torch.utils.data.Dataset):
   def __init__(self, image_paths, sigma, maxdist, sparsity=1.0, fraction=1.0, batch_size=None, 

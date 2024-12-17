@@ -16,3 +16,4 @@ elif type conda      > /dev/null; then
 else echo "WARN No micromamba, mamba or conda found."; fi
 
 export conda="$conda"
+source ~/.bash_profile

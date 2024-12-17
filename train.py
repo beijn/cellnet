@@ -71,12 +71,12 @@ CFG = obj(**(dict(
   fraction=1, 
   image_paths=image_paths,
   lossf='MSE+BCE',
-  lr_gamma=0.1,
+  lr_gamma=0.15,
   lr_steps=2.5,
   maxdist=26, 
   MODE=MODE,
-  model_architecture='smp.Unet',#'smp.UnetPlusPlus:attention',
-  model_encoder='resnet34',#'timm-mobilenetv3_large_100',
+  model_architecture='smp.Unet' if MODE=='draft' else 'smp.UnetPlusPlus:attention',
+  model_encoder='resnet34' if MODE=='draft' else 'timm-mobilenetv3_large_100',
   param=P,
   sigma=5.0,  # NOTE: do grid search again later when better convergence 
   sparsity=1,
@@ -84,10 +84,6 @@ CFG = obj(**(dict(
   xnorm_type='imagenet',  # TODO: check 'image_per_channel' as well
   ) | {P: ps[-1] if type(ps) is list else ps}))
 
-
-match EXPERIMENT:
-  case 'release_big':
-    CFG.model_encoder = 'timm-efficientnet-b8'
 
 import torch
 import matplotlib.pyplot as plt
@@ -140,8 +136,7 @@ def mkAugs(mode):
   )[mode]
 
 # %% # Plot data 
-"""
-if (MODE == 'draft' and not CUDA) or 'demo': 
+if MODE in ('draft', 'demo'): 
   def norm01(x):
     x = x.transpose(1,2,0)
     x = x/(x.max((0,1))-x.min((0,1)))
@@ -174,7 +169,7 @@ if (MODE == 'draft' and not CUDA) or 'demo':
 
   plot_grid((3,3), transforms=mkAugs('val'))
   plot_grid((3,3), transforms=mkAugs('train'))
-"""
+
 # %% # Create model 
 plt.close('all')
 
@@ -343,25 +338,8 @@ for p in [_ps[-1]] if MODE=='draft' else _ps:
 
     traindl, valdl = get_loader(cfg, ti, vi)
 
-    match cfg.model_encoder:
-      case 'timm-efficientnet-b5': 
-        cfg.lr_steps = 1.5	
-      case 'timm-mobilenetv3_large_100': 
-        cfg.lr_steps = 1.5
-        cfg.lr_gamma = 0.2
-      case 'timm-resnest50d':
-        cfg.lr_steps = 1.5
-      case 'xception':
-        cfg.lr_steps = 1.5
-      case 'vgg19_bn':
-        cfg.lr_steps = 1.5
-
     model = mk_model(cfg)(cfg)
-    try:
-      log = training_run(cfg, traindl, valdl, kp2hm, model)
-    except Exception as e: 
-      print(f"ERROR: Exception {e.__class__.__name__} in model training (train.training_run). CFG:\n", json.dumps(cfg.__dict__, indent=2))
-      raise e
+    log = training_run(cfg, traindl, valdl, kp2hm, model)
   
 # %% # save model to disk
 save_model(model, CFG, _ymax) # type: ignore
