@@ -201,9 +201,8 @@ mk_model = lambda c: {
 }[c.model_architecture]
 
 def save_model(model, CFG, _ymax):
-  B = next(iter(mk_loader([CFG.image_paths[0]], cfg=CFG, bs=1, transforms=mkAugs('test'), shuffle=False)))
-  m=model#type: ignore
-  m.eval()
+  #B = next(iter(mk_loader([CFG.image_paths[0]], cfg=CFG, bs=1, transforms=mkAugs('test'), shuffle=False)))
+  model.eval()
 
   # save a test in/out
   #os.makedirs(cachedir:=os.path.expanduser('~/.cache/cellnet'), exist_ok=True)
@@ -211,7 +210,7 @@ def save_model(model, CFG, _ymax):
   #np.save('./model_export_test_x_1.npy', x)
   #np.save('./model_export_test_y_1.npy', cpu(m(gpu(x, device=device))))
 
-  m.save_pretrained('./model_export')  # specific to master branch of SMP. TODO: make more robust with onnx. But see problem notes in cellnet.yml
+  model.save_pretrained('./model_export')  # specific to master branch of SMP. TODO: make more robust with onnx. But see problem notes in cellnet.yml
   os.remove('./model_export/README.md')
 
   settings = (CFG.__dict__ | {'ymax':float(_ymax)})
@@ -229,6 +228,7 @@ def epoch(model, kp2hm, lossf, dl, optim=None):
   for B in dl:
     x,m = B['image'].to(device), B['masks'][0].to(device)
     z = kp2hm(B).to(device)
+    m = 1 # NOTE: quick hack to ignore mask
 
     y = model(x)
     loss = lossf(y*m, z*m) 

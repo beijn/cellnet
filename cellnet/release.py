@@ -1,10 +1,10 @@
-import re
 import torch
 import segmentation_models_pytorch as smp
 
 import numpy as np
 
-import json, zipfile, shutil, os, sys
+import json, zipfile, shutil, os, sys, re
+from pathlib import Path
 
 import cellnet, cellnet.data as data, cellnet.plot as plotting
 from cellnet.internet import download, GHAPI
@@ -100,7 +100,7 @@ def count(images:list, model=None, plot=True):
     model = init_model(model)
   model.eval()  # important
 
-  counts = {}; plots = {}
+  counts = {}; plots = {}; heatmaps = {}
   X,M,S = zip(*(load_image(i, model.settings) for i in images))
   X = np.stack(X)
   if os.uname().nodename == 'eli': X=X[:,:,:256,:256]  # NOTE for development on laptop. TODO implement tiled inference
@@ -112,8 +112,9 @@ def count(images:list, model=None, plot=True):
   for i,image in enumerate(images):
     counts[image.name] = np.sum(Y[i])*model.settings["ymax"]
     if plot: plots[image.name] = plotting.overlay(X[i].transpose(1,2,0)*S[i]+M[i], Y[i], args_images={'norm':False})
+    heatmaps[image.name] = Y[i]*model.settings["ymax"]  # NOTE TODO check if association between i and image.name is correct
 
-  return counts, plots
+  return counts, plots, heatmaps
 
 
 if __name__ == '__main__':
@@ -135,9 +136,10 @@ if __name__ == '__main__':
   os.makedirs('plots', exist_ok=True)
   for path in image_paths: 
     with open(path, 'rb') as f:
-      cs, plots = count([f], model, plot=True)
+      cs, plots, heatmaps = count([f], model, plot=True)
       counts |= cs 
-      plotting.save(plots[path], os.path.join('plots', os.path.basename(path.removesuffix('.jpg')+'.png')))
+      plotting.save(plots[path], os.path.join('plots', Path(path).stem+'.png'))
+      np.save(os.path.join('plots', Path(path).stem+'.npy'), heatmaps[path])
 
   print(counts)
 
