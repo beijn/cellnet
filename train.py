@@ -39,6 +39,8 @@ EXPERIMENT = os.getenv('EXPERIMENT', 'default')
 CUDA = torch.cuda.is_available()
 device = torch.device('cuda:0' if CUDA else 'cpu'); print('device =', device)
 
+DRAFT_MODE = os.getenv('CELLNET_DRAFT_MODE', False)
+
 P, ps = experiments[EXPERIMENT]
 
 modes = ['release', 'crossval', 'draft']
@@ -47,7 +49,11 @@ if MODE not in modes: MODE = 'crossval'
 # MODE undefined => interactive execution with draft; uknown custom tag defaults to crossval
 
 
-if os.uname().nodename == 'eli': MODE = 'draft'
+if os.uname().nodename == 'eli': 
+  MODE = 'draft'
+  DRAFT_MODE = True
+  data.DRAFT_MODE = True
+  # TODO refactor
 
 if MODE=='demo': 
   image_paths = [image_paths[0]]

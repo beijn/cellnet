@@ -10,6 +10,9 @@ import albumentations as A
 from types import SimpleNamespace as obj
 
 
+# check the CELLNET_DRAFT_MODE variable
+DRAFT_MODE = os.environ.get('CELLNET_DRAFT_MODE', False) 
+
 label2int = {'Live Cell':1, 'Cell':1, 'cell':1, 'Dead cell/debris':2, 'Debris':2, 'debris': 2,
              'background': 1, 'Background': 1}
 
@@ -85,13 +88,14 @@ def load_image(path):
         print(information_channel, j, np.unique(x[...,j]), np.unique(x[...,information_channel]))
         raise ValueError(f"Image {path} has {x.shape[-1]} channels with information. Currently code only works with grayscale images. QUICK FIX: convert to grayscale. TODO: adjust code to handle RGB images as well.")
       information_channel = j    
-  return x[...,[information_channel or 0]][:256,:256]  # TODO DEBUG WARN REMOVE
+  x = x[...,[information_channel or 0]]
+  return x[:256,:256] if DRAFT_MODE else x
 
 def load_points(path): return _try_load(lambda p: np.load(f'data/cache/points/{imgid(p)}.npy'), path, "points")
 
-def load_bgmask(path): return _try_load(lambda p: np.load(f'data/cache/masks/{imgid(p)}.npy')
-                                        [label2int['background']][:256,:256]  # TODO DEBUG WARN REMOVE
-                                        , path, "masks")	# note the [label2int['background']]
+def load_bgmask(path): 
+  r = _try_load(lambda p: np.load(f'data/cache/masks/{imgid(p)}.npy')[label2int['background']], path, "masks")	
+  return r[:256,:256] if DRAFT_MODE else r
 
 class CellnetDataset(torch.utils.data.Dataset):
   def __init__(self, image_paths, sigma, maxdist, sparsity=1.0, fraction=1.0, batch_size=None, 

@@ -1,2 +1,2 @@
 #!/bin/bash
-rm -rf preds plots counts.json cfg.json 
+rm -rf preds plots counts.json cfg.json results.csv
