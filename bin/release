@@ -1,5 +1,0 @@
-cd "$path"
-zip -r model.zip model_export
-
-#branch="$(git rev-parse --abbrev-ref HEAD)"
-gh release create "$version" model.zip -t "$version" # --target "$branch" # --latest

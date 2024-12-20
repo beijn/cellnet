@@ -1,9 +1,9 @@
 #!/bin/bash
 
-what="preds plots log.csv counts.json settings.json"
+what="model_export_* log_*.csv counts.json settings.json"
 
-## ask for confirmation
-echo "This will remove the following files and directories:"
-echo $what
-echo "Are you sure you want to continue? (y/n)"
-read answer && rm -rf "$what" || echo "Aborted" 
+echo "This will remove the following files and directories:\n$what\nSure you want to continue? (y/n)"
+read answer
+if [ "$answer" != "${answer#[Yy]}" ] ;then
+     echo "Removed!" && rm -rf $what
+else echo "Aborted"; fi
