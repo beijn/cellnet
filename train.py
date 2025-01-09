@@ -69,22 +69,22 @@ else: #MODE=='crossval':
 
 CFG = obj(**(dict(
   EXPERIMENT=EXPERIMENT,
-  cropsize=256,
+  cropsize=256*1.5,
   batch_size=16,
   data_splits=data_splits,
   device=f'{device}',
-  epochs=1 if MODE in ('demo', 'draft') else 251,
+  epochs=1 if MODE in ('demo', 'draft') else 251*2,
   fraction=1, 
   image_paths=image_paths,
   lossf='MSE+BCE',
   lr_gamma=0.15,
   lr_steps=2.5,
-  maxdist=26, 
+  maxdist=26*1.5, 
   MODE=MODE,
   model_architecture='smp.Unet' if MODE=='draft' else 'smp.UnetPlusPlus:attention',
   model_encoder='resnet34' if MODE=='draft' else 'timm-mobilenetv3_large_100',
   param=P,
-  sigma=5.0,  # NOTE: do grid search again later when better convergence 
+  sigma=5*1.5,  # NOTE: do grid search again later when better convergence 
   sparsity=1,
   xnorm_params={},
   xnorm_type='imagenet',  # TODO: check 'image_per_channel' as well
@@ -181,7 +181,7 @@ plt.close('all')
 
 import segmentation_models_pytorch as smp
 
-mk_mk_model_smp = lambda cls, encoder_depth=5, **args: lambda cfg: cls(
+mk_mk_model_smp = lambda cls, encoder_depth=6, **args: lambda cfg: cls(
   encoder_name=cfg.model_encoder, 
   encoder_weights=None,
   in_channels=1,
@@ -228,7 +228,7 @@ def epoch(model, kp2hm, lossf, dl, optim=None):
   for B in dl:
     x,m = B['image'].to(device), B['masks'][0].to(device)
     z = kp2hm(B).to(device)
-    m = 1 # NOTE: quick hack to ignore mask
+    m = 1 # NOTE: quick hack to ignore mask REMOVE REMOVE REMOVE
 
     y = model(x)
     loss = lossf(y*m, z*m) 
@@ -247,6 +247,8 @@ def epoch(model, kp2hm, lossf, dl, optim=None):
 results = pd.DataFrame()
 if not MODE=='draft': [os.makedirs(_p, exist_ok=True) for _p in ('preds', 'plots')]
 
+
+# TODO unify log and results
 def training_run(cfg, traindl, valdl, kp2hm, model):
   global results  
   p = cfg.__dict__[P]
@@ -346,6 +348,7 @@ for p in [_ps[-1]] if MODE=='draft' else _ps:
 
     model = mk_model(cfg)(cfg)
     log = training_run(cfg, traindl, valdl, kp2hm, model)
+    log.to_csv(f'trainlog_{p}_{ti[0].split("/")[-1]}.csv', index=False) 
   
 # %% # save model to disk
 save_model(model, CFG, _ymax) # type: ignore
