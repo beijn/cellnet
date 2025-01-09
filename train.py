@@ -181,7 +181,7 @@ plt.close('all')
 
 import segmentation_models_pytorch as smp
 
-mk_mk_model_smp = lambda cls, encoder_depth=6, **args: lambda cfg: cls(
+mk_mk_model_smp = lambda cls, encoder_depth=5, **args: lambda cfg: cls(
   encoder_name=cfg.model_encoder, 
   encoder_weights=None,
   in_channels=1,
