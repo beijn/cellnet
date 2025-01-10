@@ -82,7 +82,7 @@ CFG = obj(**(dict(
   maxdist=int(26*1.5), 
   MODE=MODE,
   model_architecture='smp.Unet' if MODE=='draft' else 'smp.UnetPlusPlus:attention',
-  model_encoder='resnet34' if MODE=='draft' else 'timm-efficientnet-b8',#'timm-mobilenetv3_large_100',
+  model_encoder='resnet34' if MODE=='draft' else 'timm-mobilenetv3_large_100',
   param=P,
   sigma=5*1.5,  # NOTE: do grid search again later when better convergence 
   sparsity=1,
