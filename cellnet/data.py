@@ -3,6 +3,7 @@
 import pathlib, os
 from PIL import Image
 
+from scipy import ndimage
 from scipy.ndimage import gaussian_filter, distance_transform_edt
 import numpy as np, torch, torch.utils.data
 
@@ -27,6 +28,7 @@ key2text = {'tl': 'Training Loss',     'vl': 'Validation Loss',
             }
 
 
+no_masks = np.zeros((1,1), dtype=np.uint8)  
 no_points = np.ones((1,3), dtype=np.int32)*2  ### NOTE TODO: change dtype according to load_points 
 # NOTE: this is a hack to make the dataset work with images that have no points.
 # TODO: make later code correctly work with empty point arrays
@@ -74,26 +76,37 @@ def ls(dir, ext='', stem=False):
   return sorted([((lambda f: pathlib.Path(f).stem) if stem else (lambda x:x))(
     os.path.normpath(os.path.join(dir, f))) for f in os.listdir(dir) if f.endswith(ext)])
 
-def _try_load(f, p, what):
+def _try_load(f, p, what, default=None):
   try: return f(p)
-  except Exception as e: raise Exception(f"Could not load {what} for {p}.") from e
+  except Exception as e: 
+    if default is not None: 
+      print(f"WARNING: Could not load {what} for {p}. Returning default value.")
+      return default
+    raise Exception(f"Could not load {what} for {p}.") from e
 
 def load_image(path): 
   x = _try_load(lambda p: np.array(Image.open(p)), path, "image")
-  information_channel = None
-  for j in range(x.shape[-1]):
-    if len(np.unique(x[...,j]))>1:
-      if information_channel is not None and not ((x[...,j] == x[...,information_channel]).all()): 
-        print(information_channel, j, np.unique(x[...,j]), np.unique(x[...,information_channel]))
-        raise ValueError(f"Image {path} has {x.shape[-1]} channels with information. Currently code only works with grayscale images. QUICK FIX: convert to grayscale. TODO: adjust code to handle RGB images as well.")
-      information_channel = j    
+  if x.ndim==2: x = x[:,:,None]  # add channel dimension if missing
+  information_channel = 1 if x.shape[-1]==3 else None 
+  # TODO select all channels that contain information agreeing in the whole dataset
+  if information_channel is None:
+    for j in range(x.shape[-1]):
+      if len(np.unique(x[...,j]))>1:
+        if information_channel is not None and not ((x[...,j] == x[...,information_channel]).all()): 
+          print(information_channel, j, np.unique(x[...,j]), np.unique(x[...,information_channel]))
+          raise ValueError(f"Image {path} has {x.shape[-1]} channels with information. Currently code only works with grayscale images.")
   x = x[...,[information_channel or 0]]
   return x[:256,:256] if DRAFT_MODE else x
 
 def load_points(path): return _try_load(lambda p: np.load(f'data/cache/points/{imgid(p)}.npy'), path, "points")
 
-def load_bgmask(path): 
-  r = _try_load(lambda p: np.load(f'data/cache/masks/{imgid(p)}.npy')[label2int['background']], path, "masks")	
+def load_bgmask(path, default=None): 
+  def loader(p):
+    a = np.load(f'data/cache/masks/{imgid(p)}.npy')
+    if a.ndim==3: return a[:,:,label2int['background']]
+    else: return a
+
+  r = _try_load(loader, path, "masks", default=default)
   return r[:256,:256] if DRAFT_MODE else r
 
 class CellnetDataset(torch.utils.data.Dataset):
@@ -230,7 +243,18 @@ def mask_sparse(id, x, p, maxdist, channels):
   d = d.sum(axis=-1)  # all types of points are treated the same => we dont include the points for negative examples but we train on their image parts! :]
   d = distance_transform_edt(1-d)
   d = (d > maxdist).reshape(d.shape)  # type: ignore
-  fg = (1-load_bgmask(id)) > 0
+  fg = (1-load_bgmask(id, default=np.zeros_like(d))) > 0
   if fg.shape != d.shape: print(f"WARNING: Cropping mask out of bounds for {imgid(id)}.")
   fg = fg[:d.shape[0], :d.shape[1]]
   return 1-(fg & d)[:,:,None].astype(np.float32)
+
+def masks2centers(masks):
+  """Return list of (y, x) centers for each mask label (as yielded by cellpose-sam)."""
+  centers = np.zeros((len(np.unique(masks))-1, 2)) # -1 to ignore background
+  for i, slc in enumerate(ndimage.find_objects(masks)):
+    if slc is not None:
+      mask_slice = masks[slc] == (i + 1)
+      com = ndimage.center_of_mass(mask_slice)
+      # com is (y, x) in the slice; add offsets to get global coords
+      centers[i] = com[0] + slc[0].start, com[1] + slc[1].start
+  return centers

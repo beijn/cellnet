@@ -27,9 +27,10 @@ experiments = dict(
 from cellnet import data
 import pandas as pd
 
-image_paths = ['data/images/2024-08-30_09-13-04scl2969_Overlay.tiff']
-crossval_vals = '2024-08-30_09-13-04scl2969_Overlay'
-# NOTE that with empty images the accuracy formula breaks -> TODO fix
+data_quality = pd.read_csv('data/data_quality.csv', sep=r'\s+', index_col=0)
+
+image_paths = [i for i in data.ls('data/images') if data_quality.loc[data.imgid(i), 'annotation_status'] in ('fully', 'sparse', 'empty')]
+crossval_vals = '2 4'# | QS_7415' # NOTE that with the empty image the accuracy formula breaks
 
 
 import os, torch, json
@@ -65,7 +66,7 @@ else: #MODE=='crossval':
   data_splits = [([p for p in image_paths if data.imgid(p) not in vs], 
                   [p for p in image_paths if data.imgid(p)     in vs]) 
                   for vs in crossval_vals]
-  
+
 
 CFG = obj(**(dict(
   EXPERIMENT=EXPERIMENT,
@@ -378,4 +379,4 @@ if MODE != 'release':  # HACK, fix this
   cols = pd.read_csv(StringIO(s), sep=';').columns
   R = pd.read_csv(StringIO(s), sep=';', converters={col:ast.literal_eval for col in cols})
   R.rename(columns=dict(vi=key2text['vi']), inplace=True)
-  plot.regplot(R, R.columns[0], key2text)
+  plot.regplot(R, R.columns[0], key2text, sort_by=None)
