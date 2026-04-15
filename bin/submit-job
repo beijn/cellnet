@@ -7,9 +7,9 @@ INPUT="$2"
 EXPERIMENT="$3"
 RELEASE_MODE="$4"
 
-source bin/init_shell.sh
+source bin/imports.sh
 if [ "$MODE" == "remote" ]; then
-  echo "NOTE: Forwarding job to \$HPC_HOST=$HPC_HOST (set in bin/init_shell.sh)"
+  echo "NOTE: Forwarding job to \$HPC_HOST=$HPC_HOST (set in bin/imports.sh)"
   ssh -t "$HPC_HOST" "cd cellnet && bin/submit-job "${@:2}" && watch -n 1 squeue -u \$USER"
   exit 1
 fi
@@ -23,13 +23,15 @@ if [ "$RELEASE_MODE" != "" ]; then OUTDIR="$OUTDIR-$RELEASE_MODE"; fi
 OUTDIR="$OUTDIR-RUNNING"
 
 mkdir -p "$OUTDIR"
-rsync -a "." "$OUTDIR" --exclude .git --exclude results
+rsync -a "." "$OUTDIR" --exclude .git --exclude results --exclude plots --exclude livecell --exclude .venv --exclude data.phase1 --exclude data.phase2 
+ln -s "$(realpath .venv)" "$OUTDIR/.venv"
+ln -s "$(realpath livecell)" "$OUTDIR/livecell" 2>/dev/null || true
 
 INPUT="$OUTDIR/$NAME.py"
 mv "$OUTDIR/$INDIR/$NAME.py" "$INPUT"  2>/dev/null
 
 if [ "$MODE" == "sbatch" ]; then
-  out="$(sbatch -J "$EXPERIMENT" $SBATCH_ARGS bin/job-ipynb "$NAME" "$INDIR" "$INPUT" "$OUTDIR" "$EXPERIMENT" "$RELEASE_MODE")"
+  out="$($HPC_BATCH -J "$EXPERIMENT" bin/job-ipynb "$NAME" "$INDIR" "$INPUT" "$OUTDIR" "$EXPERIMENT" "$RELEASE_MODE")"
   echo -e "\033[1;32m$out $NAME:$EXPERIMENT ($RELEASE_MODE) at $STARTTIME\033[0m"
 elif [ "$MODE" == "bsub" ]; then
   out="$(bsub -o lsf_report.txt -J "$EXPERIMENT" -M40000 -R "$LSF_ARGS" -gpu - bin/job-ipynb "$NAME" "$INDIR" "$INPUT" "$OUTDIR" "$EXPERIMENT" "$RELEASE_MODE")"

@@ -1,5 +1,5 @@
 #!/bin/bash
-source bin/init_shell.sh
+source bin/imports.sh
 
 pushorpull={$1:-push}
 if [ $pushorpull == "push" ]; then

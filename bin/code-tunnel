@@ -1,5 +1,5 @@
 #!/usr/bin/bash
-source bin/sh-imports.sh
+source bin/imports.sh
 
 ssh $HPC_SSH_HOST <<SSH
   if ! type code > /dev/null; then

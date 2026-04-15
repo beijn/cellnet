@@ -1,31 +1,68 @@
-[build-system]
-requires = ["setuptools>=61.0.0", "wheel"]
-build-backend = "setuptools.build_meta"
-
 [project]
 name = "cellnet"
 dynamic = ["version"]
 description = "Localizing Cells in Phase-Contrast Microscopy Images using Sparse and Noisy Center-Point Annotations"
 authors = [{name = "Benjamin Eckhardt", email = "benjamin.eckhardt@stud.uni-goettingen.de"}]
 readme = "README.md"
-requires-python = "~=3.12"
 urls.repository = "https://github.com/beijn/cellnet"
-classifiers = [
-    "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
-]
+requires-python = "~=3.12.0"
 
 dependencies = [
-    "numpy<2.0.0",
-    "Pillow",
-    "matplotlib",   
-    "segmentation-models-pytorch@git+https://github.com/qubvel/segmentation_models.pytorch#egg=bd7f877fec51309a1a7de7670aed232954450037",
+    "matplotlib>=3.10.8",
+    "numpy<2.0",
+    "pillow>=12.2.0",
+    "segmentation-models-pytorch>=0.5.0",
 ]
 
 
-[tool.setuptools.dynamic]
-version = {attr = "cellnet.__version__"}
+[dependency-groups]
+dev = [
+    "albumentations==1.4.22",
+    "colorcet>=3.1.0",
+    "ipykernel>=7.2.0",
+    "ipywidgets>=8.1.8",
+    "jupytext>=1.19.1",
+    "label-studio-sdk>=2.0.5",
+    "matplotlib>=3.10.8",
+    "nbconvert>=7.17.1",
+    "notebook>=7.5.5",
+    "numpy<2.0",
+    "pandas>=3.0.2",
+    "scikit-image>=0.26.0",
+    "scikit-learn>=1.8.0",
+    "scipy>=1.17.1",
+    "seaborn>=0.13.2",
+    "segmentation-models-pytorch>=0.5.0",
+    "cellpose>=4.1.1",
+    "pycocotools>=2.0.11",
+]
 
 [tool.setuptools]
 packages = ["cellnet"]
+[tool.setuptools.dynamic]
+version = {attr = "cellnet.__version__"}
+
+# refer to https://github.com/BaoNguyen6742/uv-install-torch for setting up pytorch with cuda in uv
+[project.optional-dependencies]
+cpu = [ "torch~=2.6.0" ]
+cu124 = [ "torch~=2.6.0" ]
+[tool.uv]
+conflicts = [
+  [
+    { extra = "cpu" },
+    { extra = "cu124" },
+  ],
+]
+[tool.uv.sources]
+torch = [
+  { index = "pytorch-cpu", extra = "cpu" },
+  { index = "pytorch-cu124", extra = "cu124" },
+]
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true

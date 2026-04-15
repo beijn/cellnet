@@ -1,5 +1,5 @@
 #!/bin/bash
 
-pip uninstall -y cellnet
-pip install -e .  # NOTE editable 
+uv pip uninstall cellnet
+uv pip install -e .  # NOTE editable 
 rm -rf build dist *.egg-info

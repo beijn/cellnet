@@ -8,8 +8,10 @@ bin/secrets.sh
 
 **/__pycache__
 build 
-*egg-info
+**/*.egg-info
 dist
+
+uv.lock
 
 model_export*
 release.zip
@@ -18,6 +20,7 @@ model.zip
 data.phase*
 data
 results 
+livecell
 
 cfg.json
 

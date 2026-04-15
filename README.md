@@ -15,10 +15,11 @@ Note: All instructions are relative to the repo root.
 
 ### Installation
 `pip install git+https://github.com/beijn/cellnet`
+or from cloned repo with `uv pip install -e .` for editable install (eg. for development)
 
 ### Usage via Command Line
 ```bash
-python cellnet/release.py [list of image (/folder) paths]
+uv run python cellnet/release.py [list of image (/folder) paths]
 ```
 Will store the counts in `counts.json` and images with the predictions in `plots/`.
 ### Usage as a Python Module
@@ -61,7 +62,7 @@ bash bin/install  # editable pip install of the cellnet package
 - put all images in `data/images` and all annotations in `data/annotations`
 - list all images to train on in `train.py:image_paths`
 - run `bin/normalize-paths <folder>` for all data folders. eg. `bash bin/normalize-paths data/images && bash bin/normalize-paths data/annotations`
-- run `python preprocess_annotations.py` to convert the label-studio annotations to the internal training format.
+- run `uv run python preprocess_annotations.py` to convert the label-studio annotations to the internal training format.
 
 
 ### Training
