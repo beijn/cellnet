@@ -1,13 +1,12 @@
 #!/usr/bin/bash
-source bin/init_shell.sh
+source bin/sh-imports.sh
 
-ssh "$HPC_HOST" <<SSH
+ssh $HPC_SSH_HOST <<SSH
   if ! type code > /dev/null; then
     mkdir -p ~/.local/bin
     curl -Lk 'https://code.visualstudio.com/sha/download?build=stable&os=cli-alpine-x64' |
       tar -xz -C ~/.local/bin
-    echo "Installed VSCode cli to ~/.local/bin"
-    echo "NOTE: Ensure PATH contains ~/.local/bin  Eg with:  echo 'export PATH=~/.local/bin:\"\$PATH\"' >> ~/.bashrc"
+    echo "Installed VSCode cli to ~/.local/bin; NOTE: Ensure PATH contains ~/.local/bin"
   fi
-  srun --time 6:00:00 $SBATCH_ARGS --gres=gpu:tesla:1 code tunnel --accept-server-license-terms
+  $HPC_LIVE code tunnel --accept-server-license-terms 
 SSH
