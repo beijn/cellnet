@@ -30,7 +30,7 @@ import pandas as pd
 data_quality = pd.read_csv('data/data_quality.csv', sep=r'\s+', index_col=0)
 
 image_paths = [i for i in data.ls('data/images') if data_quality.loc[data.imgid(i), 'annotation_status'] in ('fully', 'sparse', 'empty')]
-crossval_vals = '2 4'# | QS_7415' # NOTE that with the empty image the accuracy formula breaks
+crossval_vals = '1'# | QS_7415' # NOTE that with the empty image the accuracy formula breaks
 
 
 import os, torch, json
@@ -358,25 +358,3 @@ if type(results[P][0]) == str: results[P] = results[P].apply(lambda s: "'"+s+"'"
 results.to_csv('results.csv', index=False, sep=';')
 
 debug.print_times()
-
-# %% # independently load and plot results
-if MODE != 'release':  # HACK, fix this
-  from cellnet import plot
-  from cellnet.data import key2text
-  from io import StringIO
-  import ast, pandas as pd
-
-  ## TODO those nans
-  with open('results.csv', 'r') as f:
-    nan = "0"
-    s = f.read().replace('nan', nan).replace('NaN', nan).strip()
-    while ";;"  in s: s = s.replace(";;", ";"+nan+";")
-    while ";\n" in s: s = s.replace(";\n", ";"+nan+"\n")
-    while "\n;" in s: s = s.replace("\n;", "\n"+nan+";")
-    if s[-1] == ";": s = s + nan
-    if s[0] == ";": s = nan + s
-
-  cols = pd.read_csv(StringIO(s), sep=';').columns
-  R = pd.read_csv(StringIO(s), sep=';', converters={col:ast.literal_eval for col in cols})
-  R.rename(columns=dict(vi=key2text['vi']), inplace=True)
-  plot.regplot(R, R.columns[0], key2text, sort_by=None)
