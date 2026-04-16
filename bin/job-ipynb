@@ -41,7 +41,6 @@ duration="$SECONDS"
 RUNTIME="$(date -ud "@$duration" +%H%M%S)"
 echo -e "\n> Notebook execution time (hhmmss) $RUNTIME"
 
-exit
 
 if [ -f "$OUTDIR/$NAME.ipynb" ]; then rm "$INPUT"; fi
 find "$OUTDIR" ! -newer "$TIMESTAMPFILE" ! -wholename "$TIMESTAMPFILE" ! -wholename "$INPUT" -delete 2>/dev/null
