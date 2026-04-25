@@ -1,0 +1,4 @@
+image,predicted_count,true_count,sMAPE,MAE,precision,recall,f1
+livecell/images/livecell_test_images/BT474_Phase_D3_1_04d04h00m_3.tif,39,59,20.408163265306122,20.0,0.03389830508474576,0.03389830508474576,0.03389830508474576
+livecell/images/livecell_test_images/BT474_Phase_D3_2_03d04h00m_2.tif,16,20,11.11111111111111,4.0,0.0,0.0,0.0
+livecell/images/livecell_test_images/BT474_Phase_D3_1_01d12h00m_4.tif,31,39,11.428571428571429,8.0,0.05128205128205128,0.05128205128205128,0.05128205128205128

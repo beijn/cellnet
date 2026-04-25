@@ -70,8 +70,8 @@ else: #MODE=='crossval':
 
 CFG = obj(**(dict(
   EXPERIMENT=EXPERIMENT,
-  cropsize=int(256*1.5),
-  batch_size=int(16*1.5),
+  cropsize=int(256),
+  batch_size=int(16),
   data_splits=data_splits,
   device=f'{device}',
   epochs=1 if MODE in ('demo', 'draft') else int(251*2.5),
@@ -82,7 +82,7 @@ CFG = obj(**(dict(
   lr_steps=2.5,
   maxdist=int(26*1.5), 
   MODE=MODE,
-  model_architecture='smp.Unet' if MODE=='draft' else 'smp.UnetPlusPlus:attention',
+  model_architecture='smp.Unet' if MODE=='draft' else 'smp.UnetPlusPlus',#:attention,
   model_encoder='resnet34' if MODE=='draft' else 'timm-mobilenetv3_large_100',
   param=P,
   sigma=5*1.5,  # NOTE: do grid search again later when better convergence 
@@ -229,7 +229,7 @@ def epoch(model, kp2hm, lossf, dl, optim=None):
   for B in dl:
     x,m = B['image'].to(device), B['masks'][0].to(device)
     z = kp2hm(B).to(device)
-    m = 1 # NOTE: quick hack to ignore mask REMOVE REMOVE REMOVE
+    m = 1 # NOTE: quick hack to ignore mask
 
     y = model(x)
     loss = lossf(y*m, z*m) 

@@ -23,7 +23,7 @@ if [ "$RELEASE_MODE" != "" ]; then OUTDIR="$OUTDIR-$RELEASE_MODE"; fi
 OUTDIR="$OUTDIR-RUNNING"
 
 mkdir -p "$OUTDIR"
-rsync -a "." "$OUTDIR" --exclude .git --exclude results --exclude plots --exclude livecell --exclude .venv --exclude data.phase1 --exclude data.phase2 
+rsync -a "." "$OUTDIR" --exclude .git --exclude results --exclude plots --exclude livecell --exclude .venv --exclude data.phase1 --exclude data.phase2
 ln -s "$(realpath .venv)" "$OUTDIR/.venv"
 ln -s "$(realpath livecell)" "$OUTDIR/livecell" 2>/dev/null || true
 

@@ -13,7 +13,7 @@ def convert_coco_project(path, images_subset={}):
   for img_id in coco.getImgIds():
     img_info = coco.loadImgs(img_id)[0]
     if images_subset and img_info['file_name'] not in images_subset: continue
-    if not os.path.exists(f'data/cache/points/{imgid(img_info["file_name"])}.npy'): continue
+    if os.path.exists(f'data/cache/points/{imgid(img_info["file_name"])}.npy'): continue
     I = imgid(img_info['file_name'])
     annotation_ids = coco.getAnnIds(imgIds=img_id)
     annotations = coco.loadAnns(annotation_ids)
@@ -34,11 +34,12 @@ def main(clear_cache=False):
 
   dataset_experiment = 'livecell/0_train2percent.json'
   images_subset = set(ann["file_name"] for ann in json.load(open(dataset_experiment))['images'])
+  images_subset = {}
 
-  for annotation_file in ['livecell/livecell_coco_train.json', 'livecell/livecell_coco_val.json', 'livecell/livecell_coco_test.json']:
+  for annotation_file in ['livecell/livecell_coco_test.json']:#'livecell/livecell_coco_train.json', 'livecell/livecell_coco_val.json']:
     convert_coco_project(os.path.join(annotation_file), images_subset)
 
-  for image_file in images_subset:
+  for image_file in (images_subset if images_subset else os.listdir(ospath('livecell/images'))):
     if not os.path.isfile(ospath(f'data/cache/points/{imgid(image_file)}.npy')):
       print(f'WARNING: No point annotations found for image {image_file}. Will autogenerate empty points.')
       np.save(ospath(f'data/cache/points/{imgid(image_file)}.npy'), no_points)

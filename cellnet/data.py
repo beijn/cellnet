@@ -63,12 +63,12 @@ batch2cpu = lambda B, z=None, y=None: [obj(**{k:cpu(v) for v,k in zip(b, 'xmklzy
 def wrap_padded(f, multiple=32, mode='reflect'):
   """Use because model accepts tensors only in specfic shapes that are multiples of 32. reflect uses mirror padding which will influence the accuracy only minimaly by providing plausible context at edges. the predictions over the edges are removed. NOTE: expects BCHW."""
   # TODO: better results with equal halved padding on all sides and not everything on one?
-  def inner(x):
+  def inner(x, *a, **kw):
     s = x.shape; m = multiple
     istensor = isinstance(x, torch.Tensor)
     x_padded = torch.nn.functional.pad(x, (0, m - s[-1] % m,  0, m - s[-2] % m), mode=mode) if istensor else\
       np.pad(x, ((0,0), (0,0), (0, m - s[-2] % m), (0, m - s[-1] % m)), mode=mode) # type: ignore
-    y_padded = f(x_padded)
+    y_padded = f(x_padded, *a, **kw)
     return y_padded[..., :s[-2], :s[-1]] 
   return inner
 
@@ -126,7 +126,6 @@ class CellnetDataset(torch.utils.data.Dataset):
 
     self._generate_masks(fraction=self.fraction, sparsity=self.sparsity)
 
-
   def _generate_masks(self, fraction=1.0, sparsity=1.0):
     assert fraction>0 and sparsity>0, "fraction and sparsity must both be (0,1]"
 
@@ -183,7 +182,7 @@ def mk_loader(image_paths, bs, transforms, cfg, shuffle=True, override_points=No
 
   from torch.cuda import device_count as gpu_count; from multiprocessing import cpu_count 
   return torch.utils.data.DataLoader(CellnetDataset(**(cfg.__dict__ | dict(image_paths=image_paths, transforms=transforms, batch_size=bs, override_points=override_points))), 
-    batch_size=bs, shuffle=shuffle, collate_fn=collate, pin_memory=True, num_workers=8) # TODO: figure out and fix error and change back #8 if torch.cuda.is_available() else 2)
+    batch_size=bs, shuffle=shuffle, collate_fn=collate, num_workers=8)#, pin_memory=True # TODO: figure out and fix error and change back #8 if torch.cuda.is_available() else 2)
 
 
 def mk_XNorm(cfg, norm_using_images=['all']):# -> tuple[Callable[..., Normalize], dict[str, list[Any]]]:

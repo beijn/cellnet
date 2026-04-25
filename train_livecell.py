@@ -28,9 +28,8 @@ from cellnet import data
 import pandas as pd, json
 
 
-image_paths = ['livecell/images/livecell_train_val_images/'+ann["file_name"] for ann in json.load(open('livecell/0_train5percent.json'))['images']]
-
-crossval_vals = [data.imgid(p) for p in image_paths[::5]]
+image_paths = ['livecell/images/livecell_train_val_images/'+ann["file_name"] for ann in json.load(open('livecell/0_train2percent.json'))['images']]
+crossval_vals = " ".join([data.imgid(p) for p in image_paths[::5]])
 
 import os, torch, json
 from types import SimpleNamespace as obj
@@ -69,8 +68,8 @@ else: #MODE=='crossval':
 
 CFG = obj(**(dict(
   EXPERIMENT=EXPERIMENT,
-  cropsize=int(256*1.5),
-  batch_size=int(16*1.5),
+  cropsize=int(256),
+  batch_size=int(16),
   data_splits=data_splits,
   device=f'{device}',
   epochs=1 if MODE in ('demo', 'draft') else int(251*2.5),
@@ -81,7 +80,7 @@ CFG = obj(**(dict(
   lr_steps=2.5,
   maxdist=int(26*1.5), 
   MODE=MODE,
-  model_architecture='smp.Unet' if MODE=='draft' else 'smp.UnetPlusPlus:attention',
+  model_architecture='smp.Unet' if MODE=='draft' else 'smp.UnetPlusPlus',#:attention,
   model_encoder='resnet34' if MODE=='draft' else 'timm-mobilenetv3_large_100',
   param=P,
   sigma=5*1.5,  # NOTE: do grid search again later when better convergence 
@@ -228,7 +227,7 @@ def epoch(model, kp2hm, lossf, dl, optim=None):
   for B in dl:
     x,m = B['image'].to(device), B['masks'][0].to(device)
     z = kp2hm(B).to(device)
-    m = 1 # NOTE: quick hack to ignore mask REMOVE REMOVE REMOVE
+    m = 1 # NOTE: quick hack to ignore mask
 
     y = model(x)
     loss = lossf(y*m, z*m) 
@@ -294,10 +293,11 @@ def training_run(cfg, traindl, valdl, kp2hm, model):
     model.eval()
     # edit last row of results
     for k in tvla: row[k] = []  # type: ignore
-    for b in range(n_batches := 10): 
-      tl, ta = epoch(model, kp2hm, lossf, traindl)
-      vl, va = epoch(model, kp2hm, lossf, valdl) if valdl is not None else (float('nan'), float('nan'))
-      for k,v in zip(tvla, [tl, vl, ta, va]): row[k].append(v) # type: ignore
+    for b in range(n_batches := 1): 
+      with torch.no_grad():
+        tl, ta = epoch(model, kp2hm, lossf, traindl)
+        vl, va = epoch(model, kp2hm, lossf, valdl) if valdl is not None else (float('nan'), float('nan'))
+        for k,v in zip(tvla, [tl, vl, ta, va]): row[k].append(v) # type: ignore
 
     for k in tvla: 
       row[k+'_mean'] = np.array(row[k]).mean() # type: ignore

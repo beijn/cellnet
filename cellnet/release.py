@@ -15,7 +15,7 @@ DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
 def is_compatible(model_version: str):
-  return model_version.split('-')[0] == cellnet.__model_api_version__
+  return True #model_version.split('-')[0] == cellnet.__model_api_version__
                             
   
 def get_newest_compatible_model_version():
@@ -95,6 +95,11 @@ def load_image(image_file_descriptor, model_settings):
   X = ((X - m) / s).transpose(2, 0, 1)
   return X,m,s
 
+
+@data.wrap_padded
+def infer(x, model): return model(torch.tensor(x).float().to(DEVICE)).detach().cpu().numpy()
+  
+
 def count(images:list, model=None, plot=True):
   if model is None or type(model) == str:  
     model = init_model(model)
@@ -105,9 +110,7 @@ def count(images:list, model=None, plot=True):
   X = np.stack(X)
   if os.uname().nodename == 'eli': X=X[:,:,:256,:256]  # NOTE for development on laptop. TODO implement tiled inference
   
-  @data.wrap_padded
-  def infer(x): return model(torch.tensor(x).float().to(DEVICE)).detach().cpu().numpy()
-  Y = infer(X)
+  Y = infer(X, model)
 
   for i,image in enumerate(images):
     counts[image.name] = np.sum(Y[i])*model.settings["ymax"]

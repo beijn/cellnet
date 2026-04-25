@@ -43,6 +43,11 @@ def heatmap(hm, ax=None, alpha=lambda value: value, color='#ff0000'):
   return image(out, ax=ax)
 
 
+def points_inside_image(points, shape):
+  """Filter points that are outside the image boundaries."""
+  return np.array([p for p in points if 0 <= p[0] < shape[1] and 0 <= p[1] < shape[0]])
+
+
 def points(ax, points, labels=None, radius=10.0, colormap={1: 'black', 2: '#7700ff'}, marker='o', **scatter_args):
   """"[(x,y), ...]"""
   s = np.pi*radius**2*10000 if marker == 'o' else 10000*radius**2
@@ -93,9 +98,9 @@ def image(img, ax=None, zoom=None, norm=True, **imshow_kwargs):
 
 def overlay(x, y=None, m=None, k=None, l=None, sigma=5.0, ax=None, args_points={}, args_images={}):
   ax = image(x, ax=ax, **args_images)
-  if m is not None: heatmap(1-m, ax=ax, alpha=lambda x: 0.4*x, color='#440088')
-  if y is not None: heatmap(y, ax=ax, alpha=lambda x: 1.0*x, color='#ff0000')
-  if k is not None and l is not None and len(k) and len(l): points(ax, k, l, **({'radius':sigma*1.5}|args_points))
+  if m is not None: heatmap(1-m, ax=ax, alpha=lambda x: 0.4*x, color='#ffffff')
+  if y is not None: heatmap(y, ax=ax, alpha=lambda x: 1.0*x, color='#0cbcfd')
+  if k is not None and len(k): points(ax, k, l, **({'radius':sigma*1.5}|args_points))
   return ax
 
 def diff(y, z, m=None, k=None, l=None, sigma=4.0, ax=None):
