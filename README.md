@@ -3,7 +3,7 @@ Collaboration between the [Wellcome Sanger Institute in Cambridge](https://www.s
 
 Localizing Cells in Phase-Contrast Microscopy Images using Sparse and Noisy Center-Point Annotations
 
-Based on [Benjamin Eckhardt's Bachelor's Thesis in Computer Science](https://github.com/beijn/bachelor-thesis).
+Based on Benjamin Eckhardt's [Bachelor's Thesis in Computer Science](https://github.com/beijn/bachelor-thesis).
 
 If you use this work please cite the paper: https://arxiv.org/abs/2606.12286. [1]
 
