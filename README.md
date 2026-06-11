@@ -5,7 +5,10 @@ Localizing Cells in Phase-Contrast Microscopy Images using Sparse and Noisy Cent
 
 Based on [Benjamin Eckhardt's Bachelor's Thesis in Computer Science](https://github.com/beijn/bachelor-thesis).
 
-If you use this work please credit the original author (Benjamin Eckhardt, 2024) and cite [the Thesis](https://github.com/beijn/bachelor-thesis).
+If you use this work please cite the paper: https://arxiv.org/abs/2606.12286.
+
+_Eckhardt, Benjamin, et al. "CellNet: Localizing Cells using Sparse and Noisy Point Annotations" (2026)_
+
 
 # CellNet Documentation
 
